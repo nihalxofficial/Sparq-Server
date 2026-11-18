@@ -477,6 +477,7 @@ A visitor's view is counted without a session; `attachUser` only lets the API re
 | `POST` | `/coupons` | 👑 | Create store coupon |
 | `PATCH` | `/coupons/:id` | 👑 | Update store coupon |
 | `DELETE` | `/coupons/:id` | 👑 | Delete store coupon |
+| `PATCH` | `/coupons/:id/moderate` | 👑 | Block, put back or remove **any** code — the store's or a seller's |
 | `POST` | `/coupons/validate` | 🔐 | Validate coupon code |
 
 **Coupon Types:**
@@ -488,6 +489,24 @@ A visitor's view is counted without a session; `attachUser` only lets the API re
 - `categoryIds`: Product categories
 - Empty: All products (admin) or vendor's products
 
+**Moderation (`/coupons/:id/moderate`)** — the store team's only lever over a code it
+does not own:
+
+```json
+{ "action": "block" | "unblock" | "delete", "reason": "Optional, 200 chars" }
+```
+
+- `block` stops the code and writes `blockedReason`, `blockedAt` and `blockedBy` onto
+  the row, so the seller's own coupons desk can say why the code went quiet. The
+  seller gets a bell notification.
+- `unblock` makes it live again and clears the block fields. It deliberately skips the
+  plan's active-coupon allowance — an override, not a new code.
+- `delete` erases a code nobody has used. A code that already saved shoppers money is
+  kept as a stopped row instead, because orders and the discount ledger quote it.
+
+The API answers `{ coupon, deleted, blocked }`, so the desk can repeat what actually
+happened rather than what was asked for.
+
 #### Featured Promotions (Admin)
 
 | Method | Endpoint | Access | Description |
@@ -496,6 +515,13 @@ A visitor's view is counted without a session; `attachUser` only lets the API re
 | `POST` | `/promotions` | 👑 | Grant featured placement (a seller's listing, a shopfront, or the store's own stock) |
 | `DELETE` | `/promotions/:id` | 👑 | End placement early |
 | `GET` | `/promotions/expire` | ⏰ | Daily sweep (close expired) |
+
+A placement is a **dated shelf**, not a checkbox: every row carries `startsAt`, `endsAt`,
+`source` (`admin` or `subscription`) and the reason it went quiet. Writing a row is the
+only thing that turns `Product.isFeatured` / `VendorStore.isFeatured` on, and the sweep
+is the only thing that turns it off. Two partial unique indexes keep the rows honest:
+one live **product** shelf per listing, and one live **store** shelf per seller — so a
+paid plan's own spotlight and a grant from this desk can never double-book the marquee.
 
 ### Multi-Vendor
 
@@ -565,6 +591,20 @@ rejected
 | `POST` | `/vendor-subscription/cancel-renewal` | Vendor | Turn off auto-renew |
 | `GET` | `/vendor-subscription/expire` | ⏰ | Daily sweep (close expired) |
 
+**Plan spotlight** — every paid period that starts (checkout or free activation, both
+of which pass through `startSubscription`) also opens the shop's **own store placement
+for 7 days**, with no press from the admin desk:
+
+- The run is capped at `min(plan.featuredDurationDays ?? 7, 7)` days.
+- A live admin grant is never replaced — the plan's spotlight simply stands aside.
+- A previous subscription placement is cancelled and dimmed with the reason
+  "Replaced by the new plan period".
+- Non-trading (hidden or non-active) shops get no placement.
+- The free plan is skipped; the seller's bell and the store team's activity feed are
+  both told about the run.
+- The placement is written *after* the period is saved, so a placement failure can
+  never turn a paid period into an error the seller would retry.
+
 #### Vendor Coupons
 
 | Method | Endpoint | Access | Description |
@@ -594,6 +634,45 @@ rejected
 | Method | Endpoint | Access | Description |
 |--------|----------|--------|-------------|
 | `GET` | `/vendor-desk?months=` | 👑 | Subscriptions, commission and sales trend (3-12 months) |
+
+#### Vendor Board (Seller Directory)
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| `GET` | `/vendor-admin` | 👑 | One row per seller: plan, plan money, paid days, sales, delivery record, codes and points |
+| `GET` | `/vendor-admin/:id` | 👑 | One seller in full — account, shop, plan history and payments, listings, placements, codes, recent orders |
+
+The directory accepts `search`, `status` (`all` / `active` / `suspended` / `closed`),
+`plan` (a plan id, or `all`), `featured` (`all` / `yes` / `no`), `sort`, `page` and
+`limit`. `sort` is one of `points` (default), `sales`, `subscription`, `success`,
+`products`, `newest`, `name`.
+
+Every figure is read from the table that owns it — plan money from
+`SubscriptionTransaction` rows with `status: "success"`, plan time from the period rows,
+trade from the seller's own `VendorOrder` groups, codes from the `Coupon` collection —
+so a row cannot drift from the desk it came from. Orders that ended `rejected` or
+`cancelled` are excluded from money and counted as lost; the success rate is
+`delivered ÷ (delivered + lost)`.
+
+**Points** — the standing the desk sorts by, so a shop is never ranked on money alone:
+
+| Reading | Points |
+|---------|--------|
+| Plan money | 1 per 100 of lifetime subscription revenue |
+| Plan time | 1 per 30 days of plan time bought |
+| Sales | 1 per 1,000 of sales that were not lost |
+| Delivery record | its own percentage (0-100) |
+
+The four readings are returned with the total (`points.subscription`, `.duration`,
+`.sales`, `.record`, `.total`), so a desk deciding on a placement can see whether a shop
+earned its standing at the till or on the road. The board filters, sorts and pages in
+memory after one pass over the book — a few dozen shops, not a few thousand, and the
+sort key is itself a computation.
+
+The detail read resolves either the seller's account id or the shop id, and returns
+`vendor`, `account`, `store`, `subscription` (`live`, `history`, `payments`, `totals`),
+`products` (newest 200), `promotions` (with `promotionCounts`), `coupons` (newest 100),
+`orders` (`recent` 10 plus `totals`) and `livePlacements`.
 
 ### Rider Onboarding
 
@@ -1717,6 +1796,9 @@ On a long-running host the same routes run in-process through `node-cron` on `CR
 | **Document Uploads** | ✅ Complete (MIME + size checked) |
 | **Account Data Export** | ✅ Complete (JSON, self only) |
 | **Coupon System** | ✅ Complete |
+| **Coupon Moderation** | ✅ Complete (block / put back / remove, with a written reason) |
+| **Featured Placements** | ✅ Complete (dated shelves, grants, plan spotlight) |
+| **Vendor Board** | ✅ Complete (seller directory with points, one-seller dashboard) |
 | **Notifications** | ✅ Complete |
 | **Email Delivery** | ✅ Complete (SMTP) |
 | **Scheduled Jobs** | ✅ Complete (Cron) |
