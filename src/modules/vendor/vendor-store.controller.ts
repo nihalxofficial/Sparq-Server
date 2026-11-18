@@ -39,6 +39,11 @@ export const getPublicStores = catchAsync(async (req, res) => {
   apiResponse(res, 200, result, "Stores fetched successfully");
 });
 
+export const getPublicCategories = catchAsync(async (_req, res) => {
+  const categories = await storeService.listPublicCategories();
+  apiResponse(res, 200, { categories }, "Vendor categories fetched");
+});
+
 export const getPublicStore = catchAsync(async (req, res) => {
   // A malformed slug is read as "no such shop": the shape of the URL segment
   // is an implementation detail the public was never told about.

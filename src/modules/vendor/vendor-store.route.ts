@@ -11,6 +11,9 @@ const router = Router();
 // The discovery list and one shop's own page, served before the auth block,
 // because a shopper looks at a store before deciding whether to sign in. Only
 // trading shops answer, and the rows carry no seller contact details.
+// `categories` is registered before `/public/:slug` so the word "categories"
+// is never read as a shop slug.
+router.get("/public/categories", controller.getPublicCategories);
 router.get("/public", controller.getPublicStores);
 router.get("/public/:slug", controller.getPublicStore);
 

@@ -308,6 +308,21 @@ export async function listPublicStores(query: PublicStoreQuery) {
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
+ * The categories the public directory actually offers: one row per distinct
+ * category a trading shop still holds, so the filter never lists a name no
+ * shop answers to. Sorted for the dropdown, because the directory shows them
+ * as a plain list rather than a ranking.
+ */
+export async function listPublicCategories() {
+  const rows = await VendorStore.distinct("category", {
+    isVisible: true,
+    status: "active",
+    category: { $ne: "" },
+  });
+  return (rows as string[]).filter(Boolean).sort((a, b) => a.localeCompare(b));
+}
+
+/**
  * One page of shops, for the desks that must pick one among everyone's.
  *
  * The row keeps the seller's account id, because that is what a placement is
