@@ -164,6 +164,19 @@ export const validateCouponSchema = z.object({
     .max(200, "The cart has too many lines to check at once"),
 });
 
+/**
+ * The store team's one write on a seller's code.
+ *
+ * Three acts, one route: block (takes it off the checkout and records why),
+ * unblock (puts it back), delete (removes it, or stops it when it has already
+ * been spent). The reason is what the seller reads, so it is kept short and
+ * carried on the row.
+ */
+export const moderateCouponSchema = z.object({
+  action: z.enum(["block", "unblock", "delete"]),
+  reason: z.string().trim().max(200).optional().default(""),
+});
+
 export const couponQuerySchema = z.object({
   /** `all` keeps the admin's own and every vendor's codes together. */
   owner: z.enum(["all", "admin", "vendor"]).optional().default("all"),

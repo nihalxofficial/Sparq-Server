@@ -2,6 +2,7 @@ import { Router } from "express";
 import { validate } from "../../utils/validate";
 import {
   createCouponSchema,
+  moderateCouponSchema,
   updateCouponSchema,
   validateCouponSchema,
 } from "./coupon.validator";
@@ -25,6 +26,9 @@ router.get("/", controller.getCoupons);
 router.post("/", validate(createCouponSchema), controller.createCoupon);
 router.get("/:id", controller.getCoupon);
 router.patch("/:id", validate(updateCouponSchema), controller.updateCoupon);
+// A seller's code can only be blocked, unblocked or removed from here — the
+// store team never edits one, and the row records who acted and why.
+router.patch("/:id/moderate", validate(moderateCouponSchema), controller.moderateCoupon);
 router.delete("/:id", controller.deleteCoupon);
 
 export default router;

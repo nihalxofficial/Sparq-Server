@@ -111,6 +111,9 @@ export function toCouponDto(row: any) {
     isActive: row.isActive !== false,
     usedCount: used,
     discountGiven: money(Number(row.discountGiven) || 0),
+    /** Set only when the store team stopped it, so the seller reads the why. */
+    blockedReason: row.blockedReason || "",
+    blockedAt: row.blockedAt ? new Date(row.blockedAt).toISOString() : null,
     /** 0 means unlimited, and the screen shows "No limit" rather than a zero. */
     remaining: total > 0 ? Math.max(total - used, 0) : 0,
     redemptionCount: (row.redemptions || []).length,
@@ -300,6 +303,63 @@ export async function stopCoupon(id: string, vendorId?: string, mode: "inactive"
   row.isActive = false;
   await row.save();
   return { stopped: true, deleted: false, coupon: toCouponDto(row.toObject()) };
+}
+
+/**
+ * The store team's control over someone else's code.
+ *
+ * A seller owns their codes: this desk does not edit them, re-price them or
+ * write one in their name. It can only take one off the checkout, put it back,
+ * or remove it — a code that misleads shoppers is the marketplace's problem as
+ * much as the shop's.
+ *
+ * The block is written down, not merely flagged: the reason and the moment land
+ * on the row, so the seller's own coupons desk can say why the code went quiet
+ * instead of leaving them to guess.
+ *
+ * Unblocking deliberately skips the seller's plan allowance. That check exists
+ * so a seller cannot outgrow their rung by themselves; a desk putting a code
+ * back is the override, and refusing it here would mean the desk could only
+ * undo what the plan still allows.
+ */
+export async function moderateCoupon(
+  id: string,
+  input: { action: "block" | "unblock" | "delete"; reason?: string },
+  adminId?: string
+) {
+  const row = await requireCoupon(id);
+
+  if (input.action === "unblock") {
+    row.isActive = true;
+    row.blockedReason = "";
+    row.blockedAt = null;
+    row.blockedBy = null;
+    await row.save();
+    return { coupon: toCouponDto(row.toObject()), deleted: false, blocked: false };
+  }
+
+  if (input.action === "delete") {
+    // A code that has already saved somebody money is kept as a stopped row:
+    // the ledger and the orders that quote it outlive the code itself.
+    if (Number(row.usedCount) > 0) {
+      row.isActive = false;
+      row.blockedReason = (input.reason || "").trim() || "Removed by the store team";
+      row.blockedAt = new Date();
+      row.blockedBy = adminId ? new Types.ObjectId(adminId) : null;
+      await row.save();
+      return { coupon: toCouponDto(row.toObject()), deleted: false, blocked: true };
+    }
+
+    await Coupon.deleteOne({ _id: row._id });
+    return { coupon: toCouponDto(row.toObject()), deleted: true, blocked: true };
+  }
+
+  row.isActive = false;
+  row.blockedReason = (input.reason || "").trim() || "Stopped by the store team";
+  row.blockedAt = new Date();
+  row.blockedBy = adminId ? new Types.ObjectId(adminId) : null;
+  await row.save();
+  return { coupon: toCouponDto(row.toObject()), deleted: false, blocked: true };
 }
 
 /**

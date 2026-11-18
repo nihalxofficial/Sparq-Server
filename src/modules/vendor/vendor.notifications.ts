@@ -114,3 +114,26 @@ export async function notifyAdminPlanSpotlight(params: {
     ref: params.promotionId,
   });
 }
+
+/**
+ * A seller's code, acted on by the store team.
+ *
+ * The seller owns the code, so the one thing they must never have to guess is
+ * why it stopped working. The stored reason travels with the line, and the ref
+ * is the coupon id, which is what their coupons desk searches for.
+ */
+export async function notifyVendorCoupon(params: {
+  userId: string;
+  title: string;
+  detail?: string;
+  couponId: string;
+}) {
+  await notifyUser({
+    userId: params.userId,
+    role: "vendor",
+    type: "vendor_coupon",
+    title: params.title,
+    detail: params.detail || "",
+    ref: params.couponId,
+  });
+}

@@ -64,6 +64,18 @@ const couponSchema = new Schema(
 
     isActive: { type: Boolean, default: true, index: true },
 
+    /**
+     * Why the store team took this code off the checkout.
+     *
+     * A seller stopping their own code needs no note — they know why. A code
+     * pulled back from the other side of the marketplace does, because the
+     * seller has to read why their discount disappeared from the basket, and
+     * "stopped" with nobody's name on it is not an answer.
+     */
+    blockedReason: { type: String, default: "" },
+    blockedAt: { type: Date, default: null },
+    blockedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+
     usedCount: { type: Number, default: 0 },
     /** Amount of discount actually granted, for the performance report. */
     discountGiven: { type: Number, default: 0 },

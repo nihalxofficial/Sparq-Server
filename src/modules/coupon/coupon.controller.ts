@@ -3,6 +3,7 @@ import { apiResponse } from "../../utils/apiResponse";
 import { parseQuery } from "../../utils/validate";
 import { couponQuerySchema } from "./coupon.validator";
 import * as couponService from "./coupon.service";
+import { notifyVendorCoupon } from "../vendor/vendor.notifications";
 
 /**
  * The store team's own codes, and the checkout's validator.
@@ -46,6 +47,42 @@ export const updateCoupon = catchAsync(async (req, res) => {
 export const deleteCoupon = catchAsync(async (req, res) => {
   const result = await couponService.stopCoupon(req.params.id as string, undefined, "delete");
   apiResponse(res, 200, result, result.deleted ? "Coupon deleted" : "Coupon stopped");
+});
+
+/**
+ * The store team's block, unblock or removal of a code — including a seller's.
+ *
+ * The seller is told about it. A code vanishing from the checkout without a
+ * word is indistinguishable from a bug, so the reason the desk wrote travels to
+ * the seller's bell with the coupon id it belongs to.
+ */
+export const moderateCoupon = catchAsync(async (req, res) => {
+  const result = await couponService.moderateCoupon(
+    req.params.id as string,
+    req.body,
+    req.user!.id
+  );
+
+  const vendorId = result.coupon?.vendorId ? String(result.coupon.vendorId) : "";
+  if (vendorId) {
+    const code = result.coupon.code;
+    const unblocking = req.body.action === "unblock";
+    await notifyVendorCoupon({
+      userId: vendorId,
+      title: unblocking ? `Your coupon ${code} is live again` : `Your coupon ${code} was stopped`,
+      detail: unblocking
+        ? "The store team put it back on the checkout."
+        : result.coupon.blockedReason || "Stopped by the store team",
+      couponId: String(result.coupon._id),
+    });
+  }
+
+  const message = result.deleted
+    ? "Coupon deleted"
+    : req.body.action === "unblock"
+      ? "Coupon put back on the checkout"
+      : "Coupon stopped";
+  apiResponse(res, 200, result, message);
 });
 
 /**
