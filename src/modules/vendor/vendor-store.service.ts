@@ -336,13 +336,18 @@ export async function listStores(query: StoreQuery) {
     VendorStore.countDocuments(filter),
   ]);
 
+  // The row keeps the seller's account id, because that is what a placement is
+  // granted to, and the delivery record, because the promotions desk decides who
+  // gets the marquee and a success rate is part of that decision.
+  const stores = rows.map((store: any) => ({
+    ...toStoreDto(store),
+    userId: String(store.userId?._id ?? store.userId ?? ""),
+    ownerName: store.userId?.name || "",
+    ownerEmail: store.userId?.email || "",
+  }));
+
   return {
-    stores: rows.map((store: any) => ({
-      ...toStoreDto(store),
-      userId: String(store.userId?._id ?? store.userId ?? ""),
-      ownerName: store.userId?.name || "",
-      ownerEmail: store.userId?.email || "",
-    })),
+    stores: await withSuccessRates(stores),
     total,
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
   };
