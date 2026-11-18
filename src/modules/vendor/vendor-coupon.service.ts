@@ -79,6 +79,16 @@ export async function updateMyCoupon(userId: string, id: string, input: UpdateCo
     await assertProductsAreOwn(userId, input.productIds);
   }
 
+  // A code the store team blocked is theirs to release. Waking it from this
+  // desk would undo the moderation while the reason it was blocked for stayed
+  // on the row, so the seller is pointed at the desk that wrote it instead.
+  if (input.isActive === true && row.blockedBy) {
+    throw new ApiError(
+      403,
+      "The store team took this code off the checkout. Ask support for it to be reviewed."
+    );
+  }
+
   const reactivating = input.isActive === true && row.isActive !== true;
   if (reactivating) {
     await assertWithinLimit(userId, "coupon");

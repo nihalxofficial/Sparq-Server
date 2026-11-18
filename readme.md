@@ -501,6 +501,8 @@ does not own:
   seller gets a bell notification.
 - `unblock` makes it live again and clears the block fields. It deliberately skips the
   plan's active-coupon allowance — an override, not a new code.
+- While a block stands, the seller's own update endpoint refuses `isActive: true` with a
+  403 that names the desk, so the moderation cannot be undone from the shop's screen.
 - `delete` erases a code nobody has used. A code that already saved shoppers money is
   kept as a stopped row instead, because orders and the discount ledger quote it.
 
