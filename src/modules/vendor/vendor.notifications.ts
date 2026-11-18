@@ -94,3 +94,23 @@ export async function notifyVendorPromotion(params: {
     ref: params.promotionId,
   });
 }
+
+/**
+ * A plan's own spotlight, on the store team's board.
+ *
+ * Nobody pressed a button: a paid period started and the shop took its week on
+ * the marquee. The desk is told so it does not read the placement as a favour
+ * it does not remember giving, and it can pull the row back like any other.
+ */
+export async function notifyAdminPlanSpotlight(params: {
+  title: string;
+  detail?: string;
+  promotionId: string;
+}) {
+  await recordActivity({
+    type: "vendor",
+    title: params.title,
+    detail: params.detail || "",
+    ref: params.promotionId,
+  });
+}

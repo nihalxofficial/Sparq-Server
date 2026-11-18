@@ -4,7 +4,7 @@ import { withTransaction } from "../../utils/transactions";
 import { Product } from "../product/product.model";
 import { Coupon } from "../coupon/coupon.model";
 import { FeaturedPromotion } from "./featured-promotion.model";
-import { endPromotionsForVendor } from "./featured-promotion.service";
+import { endPromotionsForVendor, grantPlanSpotlight } from "./featured-promotion.service";
 import { SubscriptionPlan } from "./subscription-plan.model";
 import { SubscriptionTransaction, VendorSubscription } from "./vendor-subscription.model";
 import { getPlan, commissionForPlan } from "./vendor-plan.service";
@@ -256,13 +256,17 @@ interface StartSubscriptionInput {
  * It replaces any previous live row in the same unit of work, so the "one live
  * subscription" index never rejects a legitimate upgrade: the old row is closed
  * first and the new one inserted beside it as history.
+ *
+ * A paid period also opens the plan's own week in the featured shops row. That
+ * happens once this row is saved, never inside it: a spotlight is a benefit of
+ * the period, not part of the money.
  */
 export async function startSubscription(input: StartSubscriptionInput) {
   const plan = await getPlan(input.planId);
   const days = billingDays(input.billingCycle);
   const price = input.pricePaid ?? planEffectivePrice(plan, input.billingCycle);
 
-  return withTransaction(async (session) => {
+  const subscription = await withTransaction(async (session) => {
     const now = new Date();
 
     // Close whatever is live, keeping it as history.
@@ -327,6 +331,23 @@ export async function startSubscription(input: StartSubscriptionInput) {
 
     return subscription;
   });
+
+  // The period is already saved, so the plan's own spotlight is opened after it
+  // and can never turn a paid period into an error the seller would retry. The
+  // placement itself answers why it did not open, which is logged here.
+  try {
+    await grantPlanSpotlight({
+      vendorId: input.vendorId,
+      storeId: input.storeId,
+      subscriptionId: String(subscription._id),
+      plan: plan.id,
+      billingCycle: input.billingCycle,
+    });
+  } catch (error) {
+    console.error("[subscription] Could not open the plan spotlight:", error);
+  }
+
+  return subscription;
 }
 
 /**

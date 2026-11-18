@@ -4,7 +4,7 @@ import { Product } from "../product/product.model";
 import { VendorStore } from "./vendor-store.model";
 import { VendorSubscription } from "./vendor-subscription.model";
 import { FeaturedPromotion, type PromotionKind } from "./featured-promotion.model";
-import { notifyVendorPromotion } from "./vendor.notifications";
+import { notifyAdminPlanSpotlight, notifyVendorPromotion } from "./vendor.notifications";
 import { isLiveVendorProductStatus, planTierRank, type BillingCycle, type VendorPlanId } from "./vendor.types";
 import { getPlan } from "./vendor-plan.service";
 import type { GrantPromotionInput } from "./featured-promotion.validator";
@@ -628,6 +628,117 @@ export async function grantByAdmin(input: GrantPromotionInput) {
   });
 
   return created;
+}
+
+/**
+ * How long a paid plan keeps its shop in the featured shops row.
+ *
+ * A week is the promise the pricing cards make, and the plan's own featured
+ * window may only shorten it: an edit that says thirty days is about the
+ * products a seller pins, never about the whole storefront.
+ */
+export const PLAN_SPOTLIGHT_DAYS = 7;
+
+/**
+ * The week on the marquee that a paid plan carries.
+ *
+ * A seller who buys Premium or Advanced should not have to find a button to be
+ * seen: the plan includes the featured shops row, so the period opens with a
+ * dated store placement — the very row this desk grants by hand. It lives in the
+ * same table, so the store team can pull it back like any other, the sweep ends
+ * it on time, and an expired subscription takes it down with the rest of what
+ * the plan paid for.
+ *
+ * Nothing here may fail a sale. Every "not this time" answer is returned as a
+ * reason, and the caller runs this only after the period is already saved.
+ */
+export async function grantPlanSpotlight(params: {
+  vendorId: string;
+  storeId: string;
+  subscriptionId: string;
+  plan: VendorPlanId;
+  billingCycle?: BillingCycle | null;
+}): Promise<{ granted: boolean; days: number; reason: string; promotion: PromotionDto | null }> {
+  const idle = (reason: string) => ({ granted: false, days: 0, reason, promotion: null });
+
+  // A basic rung buys no marquee time. Stepping down books nothing new; the
+  // placement already running is dated and ends on its own, exactly as a
+  // featured product bought earlier keeps the days it was sold.
+  const plan = await getPlan(params.plan).catch(() => null);
+  if (!plan || planTierRank(plan) <= 1) {
+    return idle("This plan does not include the featured shops row");
+  }
+
+  const days = Math.min(
+    Math.max(Math.round(Number(plan.featuredDurationDays) || 0) || PLAN_SPOTLIGHT_DAYS, 1),
+    PLAN_SPOTLIGHT_DAYS
+  );
+
+  // A shop that is hidden, suspended or closed has no shopfront to point at, so
+  // the row would show a door nobody can open.
+  const store: any = await VendorStore.findById(params.storeId).lean().catch(() => null);
+  if (!store) return idle("No shop to put in the featured row");
+  if (store.isVisible === false || (store.status || "active") !== "active") {
+    return idle("A shop that is not trading cannot hold the featured row");
+  }
+
+  const now = new Date();
+
+  // A placement this desk made by hand is not replaced by a plan: the seller is
+  // paying for a week that can start when the favour is over, not for ending it.
+  const granted = await FeaturedPromotion.findOne({
+    vendorId: new Types.ObjectId(params.vendorId),
+    kind: "store",
+    status: "active",
+    source: "admin",
+    endsAt: { $gt: now },
+  }).lean();
+  if (granted) return idle("The store team already has this shop in the featured row");
+
+  // A renewal refreshes the week instead of leaving the last day of the old one
+  // counting down, so every period is sold with its own full spotlight.
+  const previous = await FeaturedPromotion.find({
+    vendorId: new Types.ObjectId(params.vendorId),
+    kind: "store",
+    status: "active",
+    source: "subscription",
+    endsAt: { $gt: now },
+  });
+
+  for (const row of previous) {
+    row.status = "cancelled";
+    row.endedAt = now;
+    row.endedReason = "Replaced by the new plan period";
+    await row.save();
+    await dim(row);
+  }
+
+  const promotion = await createPromotion(
+    { kind: "store", days },
+    {
+      vendorId: params.vendorId,
+      storeId: params.storeId,
+      plan: plan.id,
+      billingCycle: params.billingCycle ?? null,
+      source: "subscription",
+      subscriptionId: params.subscriptionId,
+    }
+  );
+
+  await notifyVendorPromotion({
+    userId: params.vendorId,
+    title: "Your store is on the featured row",
+    detail: `${days} days in the featured shops row — included with your ${plan.name} plan`,
+    promotionId: promotion._id,
+  });
+
+  await notifyAdminPlanSpotlight({
+    title: `${store.name || "A shop"} took its ${plan.name} spotlight`,
+    detail: `${days} days in the featured shops row, opened by the plan period that just started — no press from this desk.`,
+    promotionId: promotion._id,
+  });
+
+  return { granted: true, days, reason: "", promotion };
 }
 
 /**
