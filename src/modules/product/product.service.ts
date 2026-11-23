@@ -519,13 +519,15 @@ async function buildFilterConditions(
     });
   } else if (query.vendorStatus && query.vendorStatus !== "all") {
     // The desk's listing filter. Platform stock carries no vendor status and is
-    // live by definition, so it answers to "published" as well.
+    // live by definition, so it answers to "published". A sold-out listing is
+    // live as well — the desk reads its emptiness in the Stock column rather
+    // than in a tab of its own — so "published" covers every live status.
     conditions.push(
       query.vendorStatus === "published"
         ? {
             $or: [
               { vendorProductStatus: { $exists: false } },
-              { vendorProductStatus: "published" },
+              { vendorProductStatus: { $in: [...VENDOR_LIVE_PRODUCT_STATUSES] } },
             ],
           }
         : { vendorProductStatus: query.vendorStatus }
@@ -613,6 +615,10 @@ async function countListingStatuses(query: GetProductsQuery) {
     const key = String(row._id ?? "published");
     counts[key] = (counts[key] ?? 0) + (Number(row.count) || 0);
   }
+  // "Live" answers with the sold-out rows too, so their bucket folds into it
+  // and no tab ever reads a number it cannot list.
+  counts.published = (counts.published ?? 0) + (counts.out_of_stock ?? 0);
+  delete counts.out_of_stock;
   counts.all = Object.values(counts).reduce((sum, value) => sum + value, 0);
   return counts;
 }
