@@ -356,13 +356,13 @@ export async function archiveMyProduct(userId: string, productId: string) {
   return formatProduct(product);
 }
 
-/** Unarchives an archived product and restores it to draft so the vendor can manage or publish it. */
+/** Unarchives an archived product and restores it directly to published/active. */
 export async function unarchiveMyProduct(userId: string, productId: string) {
   const product = await requireOwnedProduct(userId, productId);
   const store = await requireStore(userId);
 
-  product.vendorProductStatus = "draft";
-  product.isVisible = false;
+  product.vendorProductStatus = "published";
+  product.isVisible = true;
   await product.save();
 
   await syncStoreProductCount(String(store._id));
