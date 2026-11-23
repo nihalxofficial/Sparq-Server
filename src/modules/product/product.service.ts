@@ -336,7 +336,7 @@ export async function createProduct(data: CreateProductInput) {
 // ─── Filter builders ──────────────────────────────────────────────────────────
 
 /** Matches the linked category, or the legacy specifications.Category label. */
-async function buildCategoryCondition(category: string) {
+export async function buildCategoryCondition(category: string) {
   const cat = await Category.findOne({ $or: [{ slug: category }, { name: category }] });
   const catName = cat?.name || category.replace(/-/g, " ");
   const catRegex = new RegExp(`^${escapeRegex(catName)}$`, "i");
@@ -351,7 +351,7 @@ async function buildCategoryCondition(category: string) {
 }
 
 /** Matches the linked subcategory, or the legacy specifications.Subcategory label. */
-async function buildSubCategoryCondition(subCategory: string) {
+export async function buildSubCategoryCondition(subCategory: string) {
   const sub = await SubCategory.findOne({ $or: [{ slug: subCategory }, { name: subCategory }] });
   const subName = sub?.name || subCategory.replace(/-/g, " ");
   const subRegex = new RegExp(`^${escapeRegex(subName)}$`, "i");

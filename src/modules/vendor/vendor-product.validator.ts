@@ -92,6 +92,9 @@ export const createVendorProductSchema = vendorProductSchema.extend({
 export const vendorProductQuerySchema = z.object({
   status: z.enum([...VENDOR_PRODUCT_STATUSES, "all"]).optional().default("all"),
   search: z.string().trim().max(120).optional(),
+  /** A category or subcategory slug/name, the same pair the storefront reads. */
+  category: z.string().trim().max(80).optional(),
+  subCategory: z.string().trim().max(80).optional(),
   /** In/out of stock, read the same way the shop's stock column reads it. */
   stock: z.enum(["all", "in", "out"]).optional().default("all"),
   sort: z.enum(["newest", "oldest", "price_asc", "price_desc"]).optional().default("newest"),

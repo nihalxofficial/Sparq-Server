@@ -1,7 +1,13 @@
 import { Types } from "mongoose";
 import { ApiError } from "../../utils/apiError";
 import { Product } from "../product/product.model";
-import { formatProduct, getRatingsMap, realizedSalesFor } from "../product/product.service";
+import {
+  buildCategoryCondition,
+  buildSubCategoryCondition,
+  formatProduct,
+  getRatingsMap,
+  realizedSalesFor,
+} from "../product/product.service";
 import { Category } from "../category/category.model";
 import { SubCategory } from "../subcategory/subcategory.model";
 import { requireStore, requireTradingStore, syncStoreProductCount } from "./vendor-store.service";
@@ -117,7 +123,7 @@ const SORT_ORDERS: Record<string, Record<string, 1 | -1>> = {
 
 /** The list screen: rows, per-status counts, paging and the plan's usage. */
 export async function listMyProducts(userId: string, query: VendorProductQuery) {
-  const { status, search, stock, sort, page, limit } = query;
+  const { status, search, category, subCategory, stock, sort, page, limit } = query;
 
   // Everything the list is narrowed by except the tab itself. The counts read
   // these same conditions, so a badge always says what pressing it would list.
@@ -127,6 +133,11 @@ export async function listMyProducts(userId: string, query: VendorProductQuery) 
     const match = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
     narrowing.push({ $or: [{ title: match }, { sku: match }, { brand: match }] });
   }
+
+  // The category pair is read through the same builders the shop uses, so a
+  // listing that only carries the legacy specifications label still matches.
+  if (category) narrowing.push(await buildCategoryCondition(category));
+  if (subCategory) narrowing.push(await buildSubCategoryCondition(subCategory));
 
   // The stock reading the shop's stock column uses: a row with no stock number
   // is untracked and therefore never sold out.
