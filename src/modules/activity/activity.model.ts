@@ -19,6 +19,9 @@ export const STORE_ACTIVITY_TYPES = [
   "delivery",
   // A vendor applied, resubmitted, or changed plan.
   "vendor",
+  // A seller filed a listing for review, or sent one back after a fix. The
+  // seller's own copy of the same event carries the same type.
+  "vendor_product",
   // A rider applied, was approved, rejected or had their access revoked.
   "rider",
 ] as const;

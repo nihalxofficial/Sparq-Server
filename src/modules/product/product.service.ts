@@ -17,7 +17,7 @@ import {
 import type { VendorProductStatus } from "../vendor/vendor.types";
 import { getVendorPlanState } from "../vendor/vendor-subscription.service";
 import { syncStoreProductCount } from "../vendor/vendor-store.service";
-import { notifyUser } from "../activity/activity.service";
+import { notifyVendorProductStatus } from "../vendor/vendor.notifications";
 
 /**
  * Sort keys the shop and dashboards can ask for. Every one of them ends on
@@ -697,13 +697,11 @@ export async function archiveProductByAdmin(id: string) {
 
   const targetUserId = product.vendorId ? String(product.vendorId) : product.ownerId ? String(product.ownerId) : null;
   if (targetUserId) {
-    await notifyUser({
+    await notifyVendorProductStatus({
       userId: targetUserId,
-      role: "vendor",
-      type: "vendor_product",
       title: "Product Archived",
       detail: `Your product "${product.title}" has been archived by an administrator.`,
-      ref: `/dashboard/vendor/products`,
+      productId: String(product._id),
     });
   }
 
@@ -720,13 +718,11 @@ export async function unarchiveProductByAdmin(id: string) {
 
   const targetUserId = product.vendorId ? String(product.vendorId) : product.ownerId ? String(product.ownerId) : null;
   if (targetUserId) {
-    await notifyUser({
+    await notifyVendorProductStatus({
       userId: targetUserId,
-      role: "vendor",
-      type: "vendor_product",
       title: "Product Unarchived",
       detail: `Your product "${product.title}" has been unarchived by an administrator and is now active.`,
-      ref: `/dashboard/vendor/products`,
+      productId: String(product._id),
     });
   }
 
@@ -794,15 +790,18 @@ export async function reviewVendorProduct(
 
   if (vendorId) {
     const approved = input.decision === "approve";
-    await notifyUser({
+    // An approval that lands sold out is still an approval, but the seller has
+    // to hear the shelf is empty rather than read "live" and find no buyers.
+    const wentLive = String(product.vendorProductStatus) !== "out_of_stock";
+    await notifyVendorProductStatus({
       userId: vendorId,
-      role: "vendor",
-      type: "vendor_product",
       title: approved ? "Product Approved" : "Product Needs Changes",
       detail: approved
-        ? `Your product "${product.title}" is now live in the shop.`
+        ? wentLive
+          ? `Your product "${product.title}" is now live in the shop.`
+          : `Your product "${product.title}" was approved, and shows as sold out until you restock it.`
         : `Your product "${product.title}" was not approved: ${product.vendorRejectionReason}`,
-      ref: "/dashboard/vendor/products",
+      productId: String(product._id),
     });
   }
 
@@ -824,13 +823,11 @@ export async function deleteProduct(id: string) {
 
   const targetUserId = product.vendorId ? String(product.vendorId) : product.ownerId ? String(product.ownerId) : null;
   if (targetUserId) {
-    await notifyUser({
+    await notifyVendorProductStatus({
       userId: targetUserId,
-      role: "vendor",
-      type: "vendor_product",
       title: "Product Deleted",
       detail: `Your product "${product.title}" was deleted by an administrator.`,
-      ref: `/dashboard/vendor/products`,
+      productId: String(product._id),
     });
   }
 }

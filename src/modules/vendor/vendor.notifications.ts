@@ -137,3 +137,47 @@ export async function notifyVendorCoupon(params: {
     ref: params.couponId,
   });
 }
+
+/**
+ * A listing filed for the store team's approval, on the shared board.
+ *
+ * Nothing else tells the desk that the review queue grew, so this line is how a
+ * submission is noticed. The ref is the product id, which is the row the desk
+ * opens, and the line itself lands on the queue filtered to what is waiting.
+ */
+export async function notifyAdminProductReview(params: {
+  title: string;
+  detail?: string;
+  productId: string;
+}) {
+  await recordActivity({
+    type: "vendor_product",
+    title: params.title,
+    detail: params.detail || "",
+    ref: params.productId,
+  });
+}
+
+/**
+ * One status change on a seller's listing, for that seller's own bell.
+ *
+ * Every step the seller did not press themselves — approved, sent back, pulled
+ * by the store — arrives this way, so the listing's history reads in one place.
+ * The ref is the product id rather than a route: the products desk is built
+ * from the id, and an old line survives the next rename.
+ */
+export async function notifyVendorProductStatus(params: {
+  userId: string;
+  title: string;
+  detail?: string;
+  productId: string;
+}) {
+  await notifyUser({
+    userId: params.userId,
+    role: "vendor",
+    type: "vendor_product",
+    title: params.title,
+    detail: params.detail || "",
+    ref: params.productId,
+  });
+}

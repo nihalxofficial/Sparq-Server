@@ -8,6 +8,7 @@ import { requireStore, requireTradingStore, syncStoreProductCount } from "./vend
 import { endPlacementForProduct } from "./featured-promotion.service";
 import { slugify } from "./vendor-application.service";
 import { getVendorPlanState } from "./vendor-subscription.service";
+import { notifyAdminProductReview, notifyVendorProductStatus } from "./vendor.notifications";
 import { isLiveVendorProductStatus } from "./vendor.types";
 import type { VendorProductStatus } from "./vendor.types";
 import type {
@@ -223,6 +224,23 @@ export async function createMyProduct(userId: string, input: CreateVendorProduct
     shippingInfo: input.shippingInfo ?? {},
   });
 
+  // A submission is the desk's cue: the row waits in the queue until someone
+  // answers it, and the seller gets the receipt for the same move. A plain
+  // draft is the seller's own business, so neither side is told about it.
+  if (submit) {
+    await notifyAdminProductReview({
+      title: `Listing waiting for review: ${product.title}`,
+      detail: `${store.name} · filed for approval`,
+      productId: String(product._id),
+    });
+    await notifyVendorProductStatus({
+      userId,
+      title: "Listing sent for review",
+      detail: `"${product.title}" is in the store's review queue.`,
+      productId: String(product._id),
+    });
+  }
+
   return formatProduct(product);
 }
 
@@ -315,6 +333,26 @@ export async function updateMyProduct(
 
   Object.assign(product, update);
   await product.save();
+
+  // Only the move into the queue is news. Saving a row that is already waiting
+  // leaves both bells alone, so a seller editing before the decision does not
+  // bury the desk in duplicate lines.
+  if (nextStatus === "pending_review" && currentStatus !== "pending_review") {
+    const resubmitted = currentStatus === "rejected";
+    await notifyAdminProductReview({
+      title: resubmitted
+        ? `Listing resubmitted for review: ${product.title}`
+        : `Listing waiting for review: ${product.title}`,
+      detail: `${store.name} · filed for approval`,
+      productId: String(product._id),
+    });
+    await notifyVendorProductStatus({
+      userId,
+      title: resubmitted ? "Listing resubmitted" : "Listing sent for review",
+      detail: `"${product.title}" is in the store's review queue.`,
+      productId: String(product._id),
+    });
+  }
 
   // A listing nobody can reach has no business holding a featured shelf, so the
   // placement is closed and the slot given back rather than left glowing.
