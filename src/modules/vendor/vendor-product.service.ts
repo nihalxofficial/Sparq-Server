@@ -4,16 +4,12 @@ import { Product } from "../product/product.model";
 import { formatProduct, getRatingsMap, realizedSalesFor } from "../product/product.service";
 import { Category } from "../category/category.model";
 import { SubCategory } from "../subcategory/subcategory.model";
-import { VendorStore } from "./vendor-store.model";
-import { requireStore, requireTradingStore } from "./vendor-store.service";
+import { requireStore, requireTradingStore, syncStoreProductCount } from "./vendor-store.service";
 import { endPlacementForProduct } from "./featured-promotion.service";
 import { slugify } from "./vendor-application.service";
-import { getVendorPlanState, assertWithinLimit } from "./vendor-subscription.service";
-import {
-  VENDOR_LIVE_PRODUCT_STATUSES,
-  VENDOR_PRODUCT_STATUSES,
-  isLiveVendorProductStatus,
-} from "./vendor.types";
+import { getVendorPlanState } from "./vendor-subscription.service";
+import { isLiveVendorProductStatus } from "./vendor.types";
+import type { VendorProductStatus } from "./vendor.types";
 import type {
   CreateVendorProductInput,
   UpdateVendorProductInput,
@@ -25,9 +21,11 @@ import type {
  *
  * Every query starts from the signed-in account and adds `vendorId` to it, so
  * no request can read or write another seller's row even when it guesses an id.
- * The plan limit is enforced here, on the transition into a live status — not
- * when a draft is saved — because a vendor with a full shelf can still prepare
- * the next product and publish it after making room.
+ *
+ * A save never publishes. A new listing is a draft, the seller submits it to
+ * the review queue, and only an admin's approval makes it live — so the plan
+ * limit is checked at that approval, when the row is about to take a slot a
+ * buyer can actually reach.
  */
 
 /** A slug no other product uses, derived from the title. */
@@ -45,15 +43,6 @@ async function uniqueSlug(base: string): Promise<string> {
   }
 
   return `${root}-${Date.now()}`;
-}
-
-/** Recomputes the store's cached product count from the live rows. */
-async function syncStoreProductCount(storeId: string): Promise<void> {
-  const count = await Product.countDocuments({
-    storeId,
-    vendorProductStatus: { $in: [...VENDOR_LIVE_PRODUCT_STATUSES] },
-  });
-  await VendorStore.updateOne({ _id: storeId }, { $set: { productCount: count } });
 }
 
 async function assertCategory(categoryId: string, subCategoryIds?: string[]): Promise<void> {
@@ -75,22 +64,42 @@ async function requireOwnedProduct(userId: string, productId: string) {
   return product;
 }
 
-/** The status a save should end in, from what the vendor asked for. */
-function resolveStatus(input: {
-  requested?: string;
-  current?: string;
-  publish?: boolean;
-  stockQuantity?: number | null;
-}): (typeof VENDOR_PRODUCT_STATUSES)[number] {
-  const requested = input.requested ?? (input.publish ? "published" : "published");
-  if (requested === "published" && typeof input.stockQuantity === "number" && input.stockQuantity <= 0) {
-    return "out_of_stock";
-  }
-  // The validators only ever pass a known status; this keeps the return type
-  // honest without a second list of the same strings.
-  return VENDOR_PRODUCT_STATUSES.includes(requested as (typeof VENDOR_PRODUCT_STATUSES)[number])
-    ? (requested as (typeof VENDOR_PRODUCT_STATUSES)[number])
+/** A live listing is "out_of_stock" once its tracked count runs out. */
+function liveStatusFor(stockQuantity?: number | null): VendorProductStatus {
+  return typeof stockQuantity === "number" && stockQuantity <= 0
+    ? "out_of_stock"
     : "published";
+}
+
+/**
+ * The status a save should end in, from what the seller asked for.
+ *
+ * A live listing keeps its shelf: only its stock can move it between the two
+ * live statuses, and asking for anything else there is refused because taking
+ * a listing off sale and back is a decision the review desk makes. A listing
+ * that is not live stays where it is unless the seller submits it, withdraws
+ * it, or archives it — all three moves are theirs to make.
+ */
+function resolveStatus(input: {
+  current: string;
+  requested?: string;
+  stockQuantity?: number | null;
+}): VendorProductStatus {
+  const current = input.current;
+  const live = isLiveVendorProductStatus(current);
+  const requested = input.requested;
+
+  if (!requested) {
+    return live ? liveStatusFor(input.stockQuantity) : (current as VendorProductStatus);
+  }
+
+  if (requested === "archived") return "archived";
+
+  if (live) {
+    throw new ApiError(400, "Archive the listing before moving it back to a draft.");
+  }
+
+  return requested === "pending_review" ? "pending_review" : "draft";
 }
 
 /** The list screen: rows, per-status counts, paging and the plan's usage. */
@@ -165,25 +174,18 @@ export async function getMyProduct(userId: string, productId: string, isAdmin = 
 }
 
 /**
- * Saves a new product as a draft, or publishes it straight away.
+ * Saves a new listing as a draft, or files it straight into the review queue.
  *
- * Publishing is the only branch that touches the plan limit, and the store's
- * cached count is refreshed afterwards so the dashboard and the catalogue agree
- * without a recount on read.
+ * Neither branch checks the plan limit or the store's count: a listing takes a
+ * live slot only when an admin approves it, and a seller with a full shelf can
+ * still prepare the next product and make room before the decision.
  */
 export async function createMyProduct(userId: string, input: CreateVendorProductInput) {
   const store = await requireTradingStore(userId, "listing products");
   await assertCategory(input.categoryId, input.subCategoryIds);
 
-  const publish = Boolean(input.publish);
-  if (publish) {
-    await assertWithinLimit(userId, "product");
-  }
-
-  const status = resolveStatus({
-    publish,
-    stockQuantity: input.stockQuantity ?? null,
-  });
+  const submit = Boolean(input.submit);
+  const status: VendorProductStatus = submit ? "pending_review" : "draft";
 
   const slug = input.slug?.trim()
     ? await uniqueSlug(input.slug)
@@ -194,9 +196,10 @@ export async function createMyProduct(userId: string, input: CreateVendorProduct
     vendorId: userId,
     storeId: store._id,
     vendorProductStatus: status,
-    isVisible: true,
-    publishedAt: publish ? new Date() : null,
-    submittedAt: publish ? new Date() : null,
+    // Nothing a buyer can reach, and no approval yet, so the row stays dark.
+    isVisible: false,
+    publishedAt: null,
+    submittedAt: submit ? new Date() : null,
     title: input.title,
     slug,
     categoryId: input.categoryId,
@@ -223,19 +226,17 @@ export async function createMyProduct(userId: string, input: CreateVendorProduct
     shippingInfo: input.shippingInfo ?? {},
   });
 
-  if (isLiveVendorProductStatus(status)) {
-    await syncStoreProductCount(String(store._id));
-  }
-
   return formatProduct(product);
 }
 
 /**
- * Edits one of the vendor's products.
+ * Edits one of the seller's listings.
  *
- * A transition into a live status checks the plan limit; an edit that keeps the
- * product live does not, because it is already counted. Archiving hides the row
- * from the catalogue without deleting orders that reference it.
+ * The content is always writable, including a rejected listing the seller is
+ * fixing. The status only moves where a seller is allowed to move it — into
+ * the review queue, back to a draft, or to the archive — so an approved
+ * listing keeps its shelf while it is edited. A listing that leaves the shelf
+ * gives its featured placement back.
  */
 export async function updateMyProduct(
   userId: string,
@@ -253,20 +254,14 @@ export async function updateMyProduct(
   }
 
   const currentStatus = String(product.vendorProductStatus ?? "published");
-  const requested = input.status ?? currentStatus;
+  const wasLive = isLiveVendorProductStatus(currentStatus);
   const stock = input.stockQuantity !== undefined ? input.stockQuantity : product.stockQuantity;
   const nextStatus = resolveStatus({
-    requested,
     current: currentStatus,
+    requested: input.status,
     stockQuantity: stock,
   });
-
-  const wasLive = isLiveVendorProductStatus(currentStatus);
   const willBeLive = isLiveVendorProductStatus(nextStatus);
-
-  if (!wasLive && willBeLive) {
-    await assertWithinLimit(userId, "product");
-  }
 
   const update: Record<string, unknown> = { vendorProductStatus: nextStatus };
 
@@ -309,22 +304,17 @@ export async function updateMyProduct(
     update.inStock = input.stockQuantity === null || input.stockQuantity > 0;
   }
 
-  if (input.isVisible !== undefined) {
-    update.isVisible = nextStatus === "published" ? input.isVisible : false;
-  }
-
-  if (nextStatus === "archived") {
+  // Only a live listing can be deliberately hidden. A draft, a submission and
+  // a rejected row are invisible until the desk approves them, and a fresh
+  // submission re-queues the row so the reviewer sees the latest content.
+  if (willBeLive) {
+    if (input.isVisible !== undefined) update.isVisible = input.isVisible;
+  } else {
     update.isVisible = false;
   }
 
-  if (!wasLive && willBeLive) {
-    update.publishedAt = product.publishedAt ?? new Date();
+  if (nextStatus === "pending_review") {
     update.submittedAt = new Date();
-    update.isVisible = input.isVisible ?? true;
-  }
-
-  if (willBeLive && input.isVisible === undefined && !wasLive) {
-    update.isVisible = true;
   }
 
   Object.assign(product, update);
@@ -336,7 +326,11 @@ export async function updateMyProduct(
     await endPlacementForProduct(String(product._id), "The listing is no longer on sale");
   }
 
-  await syncStoreProductCount(String(store._id));
+  // Only a move that can change the live count is worth a recount.
+  if (wasLive !== willBeLive) {
+    await syncStoreProductCount(String(store._id));
+  }
+
   return formatProduct(product);
 }
 
@@ -356,13 +350,13 @@ export async function archiveMyProduct(userId: string, productId: string) {
   return formatProduct(product);
 }
 
-/** Unarchives an archived product and restores it directly to published/active. */
+/** Unarchives a listing as a draft, so it goes back through review to sell again. */
 export async function unarchiveMyProduct(userId: string, productId: string) {
   const product = await requireOwnedProduct(userId, productId);
   const store = await requireStore(userId);
 
-  product.vendorProductStatus = "published";
-  product.isVisible = true;
+  product.vendorProductStatus = "draft";
+  product.isVisible = false;
   await product.save();
 
   await syncStoreProductCount(String(store._id));

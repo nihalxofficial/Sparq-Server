@@ -59,6 +59,19 @@ export const unarchiveProduct = catchAsync(async (req, res) => {
   apiResponse(res, 200, product, "Product unarchived");
 });
 
+export const reviewVendorProduct = catchAsync(async (req, res) => {
+  const product = await productService.reviewVendorProduct(
+    req.params.id as string,
+    req.body
+  );
+  apiResponse(
+    res,
+    200,
+    product,
+    req.body.decision === "approve" ? "Product approved" : "Product sent back to the seller"
+  );
+});
+
 /** Scheduled: closes offers whose deadline has passed. Also callable by an admin. */
 export const expireProductOffers = catchAsync(async (_req, res) => {
   const result = await productService.expireProductOffers();

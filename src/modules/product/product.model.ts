@@ -43,11 +43,19 @@ const productSchema = new Schema(
     /**
      * The vendor's own lifecycle for a product. Unset on admin-created products,
      * which are treated as live. The public catalogue only serves "published"
-     * and "out_of_stock" rows.
+     * and "out_of_stock" rows: a draft, a submission and a rejected listing all
+     * wait for an admin's decision.
      */
     vendorProductStatus: {
       type: String,
-      enum: ["pending_review", "published", "rejected", "archived", "out_of_stock"],
+      enum: [
+        "draft",
+        "pending_review",
+        "published",
+        "rejected",
+        "archived",
+        "out_of_stock",
+      ],
       default: undefined,
       index: true,
     },

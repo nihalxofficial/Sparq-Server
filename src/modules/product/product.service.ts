@@ -10,7 +10,13 @@ import { idQuery, idVariants } from "../../utils/ids";
 import { Types } from "mongoose";
 import { CreateProductInput, UpdateProductInput, GetProductsQuery } from "./product.validator";
 import type { WarrantyType } from "../warranty/warranty.types";
-import { VENDOR_LIVE_PRODUCT_STATUSES } from "../vendor/vendor.types";
+import {
+  VENDOR_LIVE_PRODUCT_STATUSES,
+  isLiveVendorProductStatus,
+} from "../vendor/vendor.types";
+import type { VendorProductStatus } from "../vendor/vendor.types";
+import { getVendorPlanState } from "../vendor/vendor-subscription.service";
+import { syncStoreProductCount } from "../vendor/vendor-store.service";
 import { notifyUser } from "../activity/activity.service";
 
 /**
@@ -517,6 +523,19 @@ async function buildFilterConditions(
         },
       ],
     });
+  } else if (query.vendorStatus && query.vendorStatus !== "all") {
+    // The desk's listing filter. Platform stock carries no vendor status and is
+    // live by definition, so it answers to "published" as well.
+    conditions.push(
+      query.vendorStatus === "published"
+        ? {
+            $or: [
+              { vendorProductStatus: { $exists: false } },
+              { vendorProductStatus: "published" },
+            ],
+          }
+        : { vendorProductStatus: query.vendorStatus }
+    );
   }
 
   if (isFeatured !== undefined) {
@@ -720,6 +739,86 @@ export async function unarchiveProductByAdmin(id: string) {
   return formatProduct(product, { view: "admin" });
 }
 
+/**
+ * An admin's decision on a listing waiting in the review queue.
+ *
+ * Approval is the only path onto the shelf, so the seller's plan limit is
+ * checked here — a listing that would exceed the plan is refused with what the
+ * plan allows, never silently left half-live. A rejection stores the reason the
+ * seller needs in order to fix the listing and resubmit it.
+ */
+export async function reviewVendorProduct(
+  id: string,
+  input: { decision: "approve" | "reject"; reason?: string }
+) {
+  const product = await Product.findById(id);
+  if (!product) throw new ApiError(404, "Product not found");
+  if (product.vendorProductStatus !== "pending_review") {
+    throw new ApiError(409, "Only a listing waiting for review can be approved or rejected");
+  }
+
+  const vendorId = product.vendorId
+    ? String(product.vendorId)
+    : product.ownerId
+      ? String(product.ownerId)
+      : null;
+
+  if (input.decision === "approve") {
+    if (vendorId) {
+      const state = await getVendorPlanState(vendorId);
+      if (!state.isLive) {
+        throw new ApiError(
+          409,
+          "The seller's subscription has ended. This listing can go live once they renew."
+        );
+      }
+      if (state.usage.products >= state.plan.maxProducts) {
+        throw new ApiError(
+          409,
+          `The seller's ${state.plan.name} plan allows ${state.plan.maxProducts} live products, and they already have ${state.usage.products}. Ask them to free a slot or upgrade before approving.`
+        );
+      }
+    }
+
+    // A listing whose tracked stock is already gone goes live sold out, so the
+    // shop never offers a unit that cannot ship.
+    const liveStatus: VendorProductStatus =
+      typeof product.stockQuantity === "number" && product.stockQuantity <= 0
+        ? "out_of_stock"
+        : "published";
+    product.vendorProductStatus = liveStatus;
+    product.isVisible = true;
+    product.vendorRejectionReason = "";
+    product.publishedAt = new Date();
+  } else {
+    product.vendorProductStatus = "rejected";
+    product.isVisible = false;
+    product.vendorRejectionReason = input.reason?.trim() ?? "";
+  }
+
+  await product.save();
+
+  if (vendorId) {
+    const approved = input.decision === "approve";
+    await notifyUser({
+      userId: vendorId,
+      role: "vendor",
+      type: "vendor_product",
+      title: approved ? "Product Approved" : "Product Needs Changes",
+      detail: approved
+        ? `Your product "${product.title}" is now live in the shop.`
+        : `Your product "${product.title}" was not approved: ${product.vendorRejectionReason}`,
+      ref: "/dashboard/vendor/products",
+    });
+  }
+
+  if (input.decision === "approve" && product.storeId) {
+    await syncStoreProductCount(String(product.storeId));
+  }
+
+  return formatProduct(product, { view: "admin" });
+}
+
 export async function deleteProduct(id: string) {
   const product = await Product.findByIdAndDelete(id);
   if (!product) throw new ApiError(404, "Product not found");
@@ -749,14 +848,14 @@ export async function getProductBySlug(slug: string, view: ProductView = "public
     .populate("storeId", "name slug");
   if (!product) throw new ApiError(404, "Product not found");
 
-  // A vendor's hidden or unpublished row is not a storefront page, even to
-  // someone who guessed the link. The admin view reads it so the desk can act
-  // on a listing a shopper cannot reach.
-  const blockedStatuses = ["pending_review", "rejected", "archived"];
+  // A seller's row that is not live is not a storefront page, even to someone
+  // who guessed the link: drafts, submissions, rejections and archived stock
+  // all wait behind the desk. The admin view reads it so the desk can act.
+  const vendorStatus = (product as any).vendorProductStatus;
   if (
     view !== "admin" &&
     (product.isVisible === false ||
-      blockedStatuses.includes(String((product as any).vendorProductStatus)))
+      (vendorStatus != null && !isLiveVendorProductStatus(vendorStatus)))
   ) {
     throw new ApiError(404, "Product not found");
   }

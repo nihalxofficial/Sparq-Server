@@ -1,7 +1,9 @@
 import { Types } from "mongoose";
 import { ApiError } from "../../utils/apiError";
+import { Product } from "../product/product.model";
 import { VendorStore } from "./vendor-store.model";
 import { VendorOrder } from "./vendor-order.model";
+import { VENDOR_LIVE_PRODUCT_STATUSES } from "./vendor.types";
 import type { StoreQuery, UpdateStoreInput, PublicStoreQuery } from "./vendor-store.validator";
 
 /**
@@ -95,6 +97,22 @@ export async function requireTradingStore(userId: string, action: string) {
 
 export async function getMyStore(userId: string) {
   return toStoreDto(await requireStore(userId));
+}
+
+/**
+ * Recomputes the store's cached product count from its live rows.
+ *
+ * The shop cards and the admin board print this number without joining the
+ * catalogue, so every write that moves a listing into or out of a live status
+ * — an admin approving it, the seller archiving it — refreshes it here rather
+ * than in each caller.
+ */
+export async function syncStoreProductCount(storeId: string): Promise<void> {
+  const count = await Product.countDocuments({
+    storeId,
+    vendorProductStatus: { $in: [...VENDOR_LIVE_PRODUCT_STATUSES] },
+  });
+  await VendorStore.updateOne({ _id: storeId }, { $set: { productCount: count } });
 }
 
 /** Only the fields the storefront renders are editable; the slug and the

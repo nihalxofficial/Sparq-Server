@@ -1,6 +1,10 @@
 import { Router } from "express";
 import { validate } from "../../utils/validate";
-import { createProductSchema, updateProductSchema } from "./product.validator";
+import {
+  createProductSchema,
+  updateProductSchema,
+  reviewVendorProductSchema,
+} from "./product.validator";
 import * as productController from "./product.controller";
 import { attachUser, requireAuth } from "../../middlewares/auth.middleware";
 import { requireRole } from "../../middlewares/role.middleware";
@@ -17,6 +21,14 @@ router.get("/expire", requireCronOrAdmin, productController.expireProductOffers)
 router.get("/", attachUser, productController.getProducts);
 router.post("/", requireAuth, requireRole("admin"), validate(createProductSchema), productController.createProduct);
 router.get("/:slug", attachUser, productController.getProductBySlug);
+// The review desk: approving is the only way a listing reaches the shop.
+router.patch(
+  "/:id/review",
+  requireAuth,
+  requireRole("admin"),
+  validate(reviewVendorProductSchema),
+  productController.reviewVendorProduct
+);
 router.patch("/:id", requireAuth, requireRole("admin"), validate(updateProductSchema), productController.updateProduct);
 router.patch("/:id/archive", requireAuth, requireRole("admin"), productController.archiveProduct);
 router.patch("/:id/unarchive", requireAuth, requireRole("admin"), productController.unarchiveProduct);

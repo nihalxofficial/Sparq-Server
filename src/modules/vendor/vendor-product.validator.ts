@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { objectIdSchema } from "../../utils/ids";
 import { WARRANTY_TYPE_VALUES } from "../warranty/warranty.types";
-import { VENDOR_PRODUCT_STATUSES } from "./vendor.types";
+import { VENDOR_PRODUCT_STATUSES, VENDOR_SETTABLE_PRODUCT_STATUSES } from "./vendor.types";
 
 /**
  * What a vendor may write about one of their own products.
@@ -78,12 +78,16 @@ export const vendorProductSchema = z.object({
 });
 
 export const updateVendorProductSchema = vendorProductSchema.partial().extend({
-  status: z.enum(["published", "archived", "out_of_stock"]).optional(),
+  /**
+   * The seller's move on the listing, never its visibility: `published` is not
+   * in the list, so a request that asks for the shelf is rejected outright.
+   */
+  status: z.enum(VENDOR_SETTABLE_PRODUCT_STATUSES).optional(),
 });
 
 export const createVendorProductSchema = vendorProductSchema.extend({
-  /** `true` publishes immediately; the default saves a draft. */
-  publish: z.boolean().optional().default(false),
+  /** `true` puts the new listing in the review queue; the default saves a draft. */
+  submit: z.boolean().optional().default(false),
 });
 
 export const vendorProductQuerySchema = z.object({

@@ -42,8 +42,9 @@ export const isBlockingApplicationStatus = (status?: string | null): boolean =>
 export const VENDOR_STORE_STATUSES = ["active", "suspended", "closed"] as const;
 export type VendorStoreStatus = (typeof VENDOR_STORE_STATUSES)[number];
 
-/** What a vendor may set on a product they own. */
+/** The full lifecycle of one listing. */
 export const VENDOR_PRODUCT_STATUSES = [
+  "draft",
   "pending_review",
   "published",
   "rejected",
@@ -51,6 +52,20 @@ export const VENDOR_PRODUCT_STATUSES = [
   "out_of_stock",
 ] as const;
 export type VendorProductStatus = (typeof VENDOR_PRODUCT_STATUSES)[number];
+
+/**
+ * The statuses a seller may write themselves.
+ *
+ * `published` and `out_of_stock` are absent on purpose: a listing goes live only
+ * when an admin approves it, so no form or request can skip the review queue.
+ */
+export const VENDOR_SETTABLE_PRODUCT_STATUSES = [
+  "draft",
+  "pending_review",
+  "archived",
+] as const;
+export type VendorSettableProductStatus =
+  (typeof VENDOR_SETTABLE_PRODUCT_STATUSES)[number];
 
 /**
  * The two statuses a buyer can reach.

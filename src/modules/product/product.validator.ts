@@ -3,6 +3,7 @@ import { objectIdSchema } from "../../utils/ids";
 // The warranty type list lives in one place, so the product form, the vendor
 // form and the product page can never disagree about which codes exist.
 import { WARRANTY_TYPE_VALUES } from "../warranty/warranty.types";
+import { VENDOR_PRODUCT_STATUSES } from "../vendor/vendor.types";
 
 const objectId = objectIdSchema("Invalid ID");
 
@@ -82,8 +83,31 @@ export const getProductsQuerySchema = z.object({
       (v) => (v === "true" || v === true ? true : v === "false" || v === false ? false : undefined),
       z.boolean().optional()
     ),
+  /**
+   * The desk's listing-status filter. The shop never sends it and the public
+   * view ignores it, because a shopper has no business naming a draft.
+   */
+  vendorStatus: z.enum([...VENDOR_PRODUCT_STATUSES, "all"]).optional(),
   mode: z.string().optional(),
 });
+
+/**
+ * An admin's decision on a listing waiting in the review queue.
+ *
+ * A rejection without a reason is a dead end for the seller — they would not
+ * know what to change — so the reason is required there and only there.
+ */
+export const reviewVendorProductSchema = z
+  .object({
+    decision: z.enum(["approve", "reject"]),
+    reason: z.string().trim().max(500).optional(),
+  })
+  .refine((value) => value.decision !== "reject" || (value.reason?.length ?? 0) >= 5, {
+    message: "Tell the seller what to change (at least 5 characters)",
+    path: ["reason"],
+  });
+
+export type ReviewVendorProductInput = z.infer<typeof reviewVendorProductSchema>;
 
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
