@@ -9,7 +9,7 @@ import { endPlacementForProduct } from "./featured-promotion.service";
 import { slugify } from "./vendor-application.service";
 import { getVendorPlanState } from "./vendor-subscription.service";
 import { notifyAdminProductReview, notifyVendorProductStatus } from "./vendor.notifications";
-import { isLiveVendorProductStatus } from "./vendor.types";
+import { isLiveVendorProductStatus, VENDOR_LIVE_PRODUCT_STATUSES } from "./vendor.types";
 import type { VendorProductStatus } from "./vendor.types";
 import type {
   CreateVendorProductInput,
@@ -103,28 +103,72 @@ function resolveStatus(input: {
   return requested === "pending_review" ? "pending_review" : "draft";
 }
 
+/**
+ * The order each sort key means on the seller's own desk. Newest is "last
+ * touched", which is what a seller expects at the top of their own list; the
+ * price sorts read the stored price, the same number the row edits.
+ */
+const SORT_ORDERS: Record<string, Record<string, 1 | -1>> = {
+  newest: { updatedAt: -1, _id: -1 },
+  oldest: { updatedAt: 1, _id: 1 },
+  price_asc: { price: 1, _id: 1 },
+  price_desc: { price: -1, _id: -1 },
+};
+
 /** The list screen: rows, per-status counts, paging and the plan's usage. */
 export async function listMyProducts(userId: string, query: VendorProductQuery) {
-  const { status, search, page, limit } = query;
-  const filter: Record<string, unknown> = { vendorId: userId };
+  const { status, search, stock, sort, page, limit } = query;
 
-  if (status && status !== "all") filter.vendorProductStatus = status;
+  // Everything the list is narrowed by except the tab itself. The counts read
+  // these same conditions, so a badge always says what pressing it would list.
+  const narrowing: Record<string, unknown>[] = [];
 
   if (search?.trim()) {
     const match = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    filter.$or = [{ title: match }, { sku: match }, { brand: match }];
+    narrowing.push({ $or: [{ title: match }, { sku: match }, { brand: match }] });
   }
+
+  // The stock reading the shop's stock column uses: a row with no stock number
+  // is untracked and therefore never sold out.
+  if (stock === "in") {
+    narrowing.push({
+      $or: [{ stockQuantity: null }, { stockQuantity: { $gt: 0 }, inStock: { $ne: false } }],
+    });
+  } else if (stock === "out") {
+    narrowing.push({
+      $and: [
+        { stockQuantity: { $ne: null } },
+        { $or: [{ stockQuantity: { $lte: 0 } }, { inStock: false }] },
+      ],
+    });
+  }
+
+  // "Published" is the live shelf, and a live listing whose tracked stock ran
+  // out is still on it — the stock chips ask the sold-out question on their own.
+  const filter =
+    status && status !== "all"
+      ? {
+          $and: [
+            { vendorId: userId },
+            ...narrowing,
+            status === "published"
+              ? { vendorProductStatus: { $in: [...VENDOR_LIVE_PRODUCT_STATUSES] } }
+              : { vendorProductStatus: status },
+          ],
+        }
+      : { $and: [{ vendorId: userId }, ...narrowing] };
 
   const [rows, total, counts, planState] = await Promise.all([
     Product.find(filter)
       .populate("categoryId", "name slug")
       .populate("subCategoryIds", "name slug")
-      .sort({ updatedAt: -1 })
+      .sort(SORT_ORDERS[sort] ?? SORT_ORDERS.newest)
       .skip((page - 1) * limit)
       .limit(limit),
     Product.countDocuments(filter),
     Product.aggregate([
-      { $match: { vendorId: new Types.ObjectId(userId) } },
+      // Aggregations skip Mongoose casting, so the id has to be an ObjectId here.
+      { $match: { $and: [{ vendorId: new Types.ObjectId(userId) }, ...narrowing] } },
       { $group: { _id: "$vendorProductStatus", count: { $sum: 1 } } },
     ]),
     getVendorPlanState(userId),
@@ -136,6 +180,14 @@ export async function listMyProducts(userId: string, query: VendorProductQuery) 
     all[String(row._id ?? "published")] = Number(row.count) || 0;
     return all;
   }, {});
+  // A live listing that ran out is still published as far as the strip is
+  // concerned; the stock chips carry the sold-out reading instead.
+  typeCounts.published = (typeCounts.published ?? 0) + (typeCounts.out_of_stock ?? 0);
+  delete typeCounts.out_of_stock;
+
+  // The strip's first tab is everything the other filters leave, so its badge
+  // is the sum rather than a bucket of its own.
+  typeCounts.all = Object.values(typeCounts).reduce((sum, value) => sum + value, 0);
 
   return {
     products: rows.map((row) => formatProduct(row, { view: "vendor" })),
