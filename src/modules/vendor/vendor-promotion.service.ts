@@ -40,9 +40,9 @@ export async function listMyPromotions(userId: string, query: PromotionQuery) {
 /**
  * Pins one of the seller's own live listings for the plan's own length.
  *
- * A draft or an archived row cannot be featured: the shelves a buyer reads are
- * the point, and a placement on something nobody can reach would use up a slot
- * for nothing.
+ * A row that is not live — waiting for review, rejected or archived — cannot be
+ * featured: the shelves a buyer reads are the point, and a placement on
+ * something nobody can reach would use up a slot for nothing.
  */
 export async function featureMyProduct(userId: string, input: FeatureProductInput) {
   const store = await requireTradingStore(userId, "featuring a product");

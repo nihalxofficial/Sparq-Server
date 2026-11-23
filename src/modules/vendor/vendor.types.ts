@@ -42,7 +42,12 @@ export const isBlockingApplicationStatus = (status?: string | null): boolean =>
 export const VENDOR_STORE_STATUSES = ["active", "suspended", "closed"] as const;
 export type VendorStoreStatus = (typeof VENDOR_STORE_STATUSES)[number];
 
-/** The full lifecycle of one listing. */
+/**
+ * The full lifecycle of one listing.
+ *
+ * "draft" survives only for rows written before the queue-first flow: a saved
+ * listing now waits for review, so nothing new is ever filed as a draft.
+ */
 export const VENDOR_PRODUCT_STATUSES = [
   "draft",
   "pending_review",
@@ -54,16 +59,14 @@ export const VENDOR_PRODUCT_STATUSES = [
 export type VendorProductStatus = (typeof VENDOR_PRODUCT_STATUSES)[number];
 
 /**
- * The statuses a seller may write themselves.
+ * The only status a seller may write themselves.
  *
  * `published` and `out_of_stock` are absent on purpose: a listing goes live only
  * when an admin approves it, so no form or request can skip the review queue.
+ * There is no draft move either — every save either starts in the queue or
+ * re-enters it.
  */
-export const VENDOR_SETTABLE_PRODUCT_STATUSES = [
-  "draft",
-  "pending_review",
-  "archived",
-] as const;
+export const VENDOR_SETTABLE_PRODUCT_STATUSES = ["pending_review"] as const;
 export type VendorSettableProductStatus =
   (typeof VENDOR_SETTABLE_PRODUCT_STATUSES)[number];
 

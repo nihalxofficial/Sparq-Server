@@ -29,10 +29,9 @@ import type {
  * Every query starts from the signed-in account and adds `vendorId` to it, so
  * no request can read or write another seller's row even when it guesses an id.
  *
- * A save never publishes. A new listing is a draft, the seller submits it to
- * the review queue, and only an admin's approval makes it live — so the plan
- * limit is checked at that approval, when the row is about to take a slot a
- * buyer can actually reach.
+ * A save never publishes. A new listing lands in the review queue, and only an
+ * admin's approval makes it live — so the plan limit is checked at that
+ * approval, when the row is about to take a slot a buyer can actually reach.
  */
 
 /** A slug no other product uses, derived from the title. */
@@ -83,9 +82,9 @@ function liveStatusFor(stockQuantity?: number | null): VendorProductStatus {
  *
  * A live listing keeps its shelf: only its stock can move it between the two
  * live statuses, and asking for anything else there is refused because taking
- * a listing off sale and back is a decision the review desk makes. A listing
- * that is not live stays where it is unless the seller submits it, withdraws
- * it, or archives it — all three moves are theirs to make.
+ * a listing off sale and back is a decision the review desk makes. Any other
+ * listing only ever moves into the review queue — there is no draft stop, and
+ * the store team's decision is what moves it out again.
  */
 function resolveStatus(input: {
   current: string;
@@ -100,13 +99,11 @@ function resolveStatus(input: {
     return live ? liveStatusFor(input.stockQuantity) : (current as VendorProductStatus);
   }
 
-  if (requested === "archived") return "archived";
-
   if (live) {
-    throw new ApiError(400, "Archive the listing before moving it back to a draft.");
+    throw new ApiError(400, "Archive the listing before filing it for review again.");
   }
 
-  return requested === "pending_review" ? "pending_review" : "draft";
+  return "pending_review";
 }
 
 /**
@@ -238,18 +235,17 @@ export async function getMyProduct(userId: string, productId: string, isAdmin = 
 }
 
 /**
- * Saves a new listing as a draft, or files it straight into the review queue.
+ * Files a new listing straight into the review queue.
  *
- * Neither branch checks the plan limit or the store's count: a listing takes a
- * live slot only when an admin approves it, and a seller with a full shelf can
- * still prepare the next product and make room before the decision.
+ * There is no draft stop: a saved listing is a submission, and the store team's
+ * answer is the only thing that can put it on the shelf. The plan limit and the
+ * store's count are not checked here either — a listing takes a live slot only
+ * when it is approved, so a seller with a full shelf can still file the next
+ * product and make room before the decision.
  */
 export async function createMyProduct(userId: string, input: CreateVendorProductInput) {
   const store = await requireTradingStore(userId, "listing products");
   await assertCategory(input.categoryId, input.subCategoryIds);
-
-  const submit = Boolean(input.submit);
-  const status: VendorProductStatus = submit ? "pending_review" : "draft";
 
   const slug = input.slug?.trim()
     ? await uniqueSlug(input.slug)
@@ -259,11 +255,11 @@ export async function createMyProduct(userId: string, input: CreateVendorProduct
     ownerId: userId,
     vendorId: userId,
     storeId: store._id,
-    vendorProductStatus: status,
-    // Nothing a buyer can reach, and no approval yet, so the row stays dark.
+    vendorProductStatus: "pending_review",
+    // Nothing a buyer can reach until the desk approves it.
     isVisible: false,
     publishedAt: null,
-    submittedAt: submit ? new Date() : null,
+    submittedAt: new Date(),
     title: input.title,
     slug,
     categoryId: input.categoryId,
@@ -287,22 +283,19 @@ export async function createMyProduct(userId: string, input: CreateVendorProduct
     shippingInfo: input.shippingInfo ?? {},
   });
 
-  // A submission is the desk's cue: the row waits in the queue until someone
-  // answers it, and the seller gets the receipt for the same move. A plain
-  // draft is the seller's own business, so neither side is told about it.
-  if (submit) {
-    await notifyAdminProductReview({
-      title: `Listing waiting for review: ${product.title}`,
-      detail: `${store.name} · filed for approval`,
-      productId: String(product._id),
-    });
-    await notifyVendorProductStatus({
-      userId,
-      title: "Listing sent for review",
-      detail: `"${product.title}" is in the store's review queue.`,
-      productId: String(product._id),
-    });
-  }
+  // The submission is the desk's cue: the row waits in the queue until someone
+  // answers it, and the seller gets the receipt for the same move.
+  await notifyAdminProductReview({
+    title: `Listing waiting for review: ${product.title}`,
+    detail: `${store.name} · filed for approval`,
+    productId: String(product._id),
+  });
+  await notifyVendorProductStatus({
+    userId,
+    title: "Listing sent for review",
+    detail: `"${product.title}" is in the store's review queue.`,
+    productId: String(product._id),
+  });
 
   return formatProduct(product);
 }
@@ -312,9 +305,8 @@ export async function createMyProduct(userId: string, input: CreateVendorProduct
  *
  * The content is always writable, including a rejected listing the seller is
  * fixing. The status only moves where a seller is allowed to move it — into
- * the review queue, back to a draft, or to the archive — so an approved
- * listing keeps its shelf while it is edited. A listing that leaves the shelf
- * gives its featured placement back.
+ * the review queue — so an approved listing keeps its shelf while it is
+ * edited. A listing that leaves the shelf gives its featured placement back.
  */
 export async function updateMyProduct(
   userId: string,
@@ -381,8 +373,8 @@ export async function updateMyProduct(
     update.inStock = input.stockQuantity === null || input.stockQuantity > 0;
   }
 
-  // Only a live listing can be deliberately hidden. A draft, a submission and
-  // a rejected row are invisible until the desk approves them, and a fresh
+  // Only a live listing can be deliberately hidden. A submission and a
+  // rejected row are invisible until the desk approves them, and a fresh
   // submission re-queues the row so the reviewer sees the latest content.
   if (willBeLive) {
     if (input.isVisible !== undefined) update.isVisible = input.isVisible;
@@ -447,14 +439,24 @@ export async function archiveMyProduct(userId: string, productId: string) {
   return formatProduct(product);
 }
 
-/** Unarchives a listing as a draft, so it goes back through review to sell again. */
+/**
+ * Unarchives a listing by filing it for review again: nothing goes back on the
+ * shelf without the store team's answer, and there is no draft to park it in.
+ */
 export async function unarchiveMyProduct(userId: string, productId: string) {
   const product = await requireOwnedProduct(userId, productId);
   const store = await requireStore(userId);
 
-  product.vendorProductStatus = "draft";
+  product.vendorProductStatus = "pending_review";
   product.isVisible = false;
+  product.submittedAt = new Date();
   await product.save();
+
+  await notifyAdminProductReview({
+    title: `Listing waiting for review: ${product.title}`,
+    detail: `${store.name} · unarchived and filed again`,
+    productId: String(product._id),
+  });
 
   await syncStoreProductCount(String(store._id));
   return formatProduct(product);

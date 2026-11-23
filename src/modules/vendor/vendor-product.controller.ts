@@ -45,5 +45,5 @@ export const archiveMyProduct = catchAsync(async (req, res) => {
 
 export const unarchiveMyProduct = catchAsync(async (req, res) => {
   const product = await productService.unarchiveMyProduct(req.user!.id, req.params.id as string);
-  apiResponse(res, 200, product, "Product moved back to drafts");
+  apiResponse(res, 200, product, "Product filed for review");
 });

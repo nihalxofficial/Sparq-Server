@@ -728,25 +728,32 @@ export async function updateProduct(id: string, data: UpdateProductInput) {
   return formatProduct(product, { view: "admin" });
 }
 
+/**
+ * A seller's listing is not the store team's to shelve.
+ *
+ * Archive is a shelf move the owner makes on their own stock: the admin desk
+ * keeps what the store itself sells, and a vendor's row leaves the shop only
+ * through the review decision it belongs to.
+ */
+function assertStoreOwned(product: { vendorId?: unknown; ownerId?: unknown }) {
+  if (product.vendorId) {
+    throw new ApiError(403, "A seller's listing is managed from the review desk, not archived here");
+  }
+  if (!product.ownerId) throw new ApiError(404, "Product not found");
+}
+
 export async function archiveProductByAdmin(id: string) {
   const product = await Product.findById(id);
   if (!product) throw new ApiError(404, "Product not found");
+  assertStoreOwned(product);
 
   product.vendorProductStatus = "archived";
   product.isVisible = false;
   await product.save();
 
+  // The shelf goes with the listing; the store's own desk needs no bell for a
+  // move it just made.
   await endPlacementForProduct(id, "The listing was archived by admin");
-
-  const targetUserId = product.vendorId ? String(product.vendorId) : product.ownerId ? String(product.ownerId) : null;
-  if (targetUserId) {
-    await notifyVendorProductStatus({
-      userId: targetUserId,
-      title: "Product Archived",
-      detail: `Your product "${product.title}" has been archived by an administrator.`,
-      productId: String(product._id),
-    });
-  }
 
   return formatProduct(product, { view: "admin" });
 }
@@ -754,20 +761,11 @@ export async function archiveProductByAdmin(id: string) {
 export async function unarchiveProductByAdmin(id: string) {
   const product = await Product.findById(id);
   if (!product) throw new ApiError(404, "Product not found");
+  assertStoreOwned(product);
 
   product.vendorProductStatus = "published";
   product.isVisible = true;
   await product.save();
-
-  const targetUserId = product.vendorId ? String(product.vendorId) : product.ownerId ? String(product.ownerId) : null;
-  if (targetUserId) {
-    await notifyVendorProductStatus({
-      userId: targetUserId,
-      title: "Product Unarchived",
-      detail: `Your product "${product.title}" has been unarchived by an administrator and is now active.`,
-      productId: String(product._id),
-    });
-  }
 
   return formatProduct(product, { view: "admin" });
 }

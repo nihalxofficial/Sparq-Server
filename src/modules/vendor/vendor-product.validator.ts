@@ -84,10 +84,7 @@ export const updateVendorProductSchema = vendorProductSchema.partial().extend({
   status: z.enum(VENDOR_SETTABLE_PRODUCT_STATUSES).optional(),
 });
 
-export const createVendorProductSchema = vendorProductSchema.extend({
-  /** `true` puts the new listing in the review queue; the default saves a draft. */
-  submit: z.boolean().optional().default(false),
-});
+export const createVendorProductSchema = vendorProductSchema;
 
 export const vendorProductQuerySchema = z.object({
   status: z.enum([...VENDOR_PRODUCT_STATUSES, "all"]).optional().default("all"),
