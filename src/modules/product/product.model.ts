@@ -33,8 +33,6 @@ const productSchema = new Schema(
     rating: { type: Number },
     reviewCount: { type: Number },
 
-    badges: [{ type: String }],
-
     sku: { type: String },
     brand: { type: String, default: "" },
     description: { type: String },

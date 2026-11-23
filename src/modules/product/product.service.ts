@@ -30,6 +30,9 @@ const SORT_OPTIONS: Record<string, Record<string, 1 | -1>> = {
   // seller by the plan that lifted it, its billing period and its length. The
   // key is written by the placement, so this list sorts one stored number.
   featured: { isFeatured: -1, featuredRank: -1, createdAt: -1, _id: 1 },
+  // A "Most sold" shelf ranks the counter the order pipeline keeps, so the
+  // product that moved the most units comes first.
+  sellCount: { sellCount: -1, _id: 1 },
   newest: { createdAt: -1, _id: 1 },
   oldest: { createdAt: 1, _id: 1 },
 };
@@ -192,14 +195,14 @@ export function formatProduct(product: any, options: FormatProductOptions = {}) 
 
   // The cost price and everything derived from it stay off the public shape, so
   // the spread below drops it before the fields are added back for the owner's
-  // own desks.
-  const { investPrice: storedInvestPrice, ...productFields } = obj;
+  // own desks. Labels saved before the shelf rework are dropped too: they no
+  // longer describe anything, but the documents still carry them.
+  const { investPrice: storedInvestPrice, badges: _legacyBadges, ...productFields } = obj;
 
   const response: Record<string, any> = {
     ...productFields,
     id,
     seller,
-    badges: Array.isArray(obj.badges) ? obj.badges : [],
     specifications,
     // A product saved with no stock quantity is not stock-tracked: nothing can
     // run it dry, so it is always offered. A tracked product with nothing left
@@ -362,14 +365,13 @@ async function buildSubCategoryCondition(subCategory: string) {
   return { $or: matches };
 }
 
-/** Free-text search across title, description, badges and specifications. */
+/** Free-text search across title, description and specifications. */
 function buildSearchCondition(search: string) {
   const searchRegex = new RegExp(escapeRegex(search.trim()), "i");
   return {
     $or: [
       { title: searchRegex },
       { description: searchRegex },
-      { badges: searchRegex },
       { "specifications.$**": searchRegex },
     ],
   };
@@ -444,11 +446,6 @@ function buildDiscountCondition(query: GetProductsQuery) {
   return { $expr: { $and: [{ $gte: [discountExpr, min] }, { $lte: [discountExpr, max] }] } };
 }
 
-/** Badge filter, e.g. "trending" or "popular". */
-function buildBadgeCondition(badge: string) {
-  return { badges: new RegExp(`^${escapeRegex(badge.trim())}$`, "i") };
-}
-
 /** Only products whose offer price is still lower than the original price. */
 function buildOfferCondition() {
   return {
@@ -503,9 +500,6 @@ async function buildFilterConditions(
   if (query.discount || query.minDiscount !== undefined || query.maxDiscount !== undefined) {
     conditions.push(buildDiscountCondition(query));
   }
-
-  const activeBadge = query.badge || query.badges;
-  if (activeBadge?.trim()) conditions.push(buildBadgeCondition(activeBadge));
 
   // The public catalogue never serves a vendor's draft, archived or hidden row.
   // Admin-created products carry no vendor status, so they stay visible exactly

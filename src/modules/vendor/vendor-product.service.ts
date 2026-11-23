@@ -215,9 +215,6 @@ export async function createMyProduct(userId: string, input: CreateVendorProduct
     brand: input.brand ?? "",
     description: input.description ?? "",
     specifications: input.specifications ?? {},
-    // The same display and after-sale fields the admin form writes, so a
-    // listing reads the same no matter which dashboard saved it.
-    badges: input.badges ?? [],
     offerEndDate: input.offerEndDate ?? undefined,
     warrantyPeriodMonths: input.warrantyPeriodMonths ?? 0,
     warrantyType: input.warrantyType ?? "manufacturer-warranty",
@@ -279,7 +276,6 @@ export async function updateMyProduct(
     "brand",
     "description",
     "specifications",
-    "badges",
     "offerEndDate",
     "warrantyPeriodMonths",
     "warrantyType",

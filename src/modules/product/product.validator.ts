@@ -31,8 +31,6 @@ export const createProductSchema = z.object({
   stockQuantity: z.number().int().nonnegative().nullable().optional(),
   sellCount: z.number().int().nonnegative().optional(),
 
-  badges: z.array(z.string()).optional(),  // plain strings, matches current form
-
   sku: z.string().optional(),
   description: z.string().optional(),
   specifications: z.record(z.string(), z.any()).optional(),
@@ -62,8 +60,6 @@ export const getProductsQuerySchema = z.object({
   minDiscount: z.coerce.number().nonnegative().optional(),
   maxDiscount: z.coerce.number().nonnegative().optional(),
   discount: z.string().optional(),
-  badge: z.string().optional(),
-  badges: z.string().optional(),
   isFeatured: z
     .preprocess(
       (v) => (v === "true" || v === true ? true : v === "false" || v === false ? false : undefined),
