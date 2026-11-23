@@ -44,7 +44,6 @@ export type VendorStoreStatus = (typeof VENDOR_STORE_STATUSES)[number];
 
 /** What a vendor may set on a product they own. */
 export const VENDOR_PRODUCT_STATUSES = [
-  "draft",
   "pending_review",
   "published",
   "rejected",

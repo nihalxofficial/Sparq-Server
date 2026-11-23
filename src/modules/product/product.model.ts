@@ -47,7 +47,7 @@ const productSchema = new Schema(
      */
     vendorProductStatus: {
       type: String,
-      enum: ["draft", "pending_review", "published", "rejected", "archived", "out_of_stock"],
+      enum: ["pending_review", "published", "rejected", "archived", "out_of_stock"],
       default: undefined,
       index: true,
     },

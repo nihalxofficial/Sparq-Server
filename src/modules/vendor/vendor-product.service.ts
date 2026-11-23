@@ -123,7 +123,7 @@ export async function listMyProducts(userId: string, query: VendorProductQuery) 
   const typeCounts = (counts as Array<{ _id: string | null; count: number }>).reduce<
     Record<string, number>
   >((all, row) => {
-    all[String(row._id ?? "draft")] = Number(row.count) || 0;
+    all[String(row._id ?? "published")] = Number(row.count) || 0;
     return all;
   }, {});
 
@@ -252,7 +252,7 @@ export async function updateMyProduct(
     );
   }
 
-  const currentStatus = String(product.vendorProductStatus ?? "draft");
+  const currentStatus = String(product.vendorProductStatus ?? "published");
   const requested = input.status ?? currentStatus;
   const stock = input.stockQuantity !== undefined ? input.stockQuantity : product.stockQuantity;
   const nextStatus = resolveStatus({

@@ -78,7 +78,7 @@ export const vendorProductSchema = z.object({
 });
 
 export const updateVendorProductSchema = vendorProductSchema.partial().extend({
-  status: z.enum(["draft", "published", "archived", "out_of_stock"]).optional(),
+  status: z.enum(["published", "archived", "out_of_stock"]).optional(),
 });
 
 export const createVendorProductSchema = vendorProductSchema.extend({

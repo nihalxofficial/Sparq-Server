@@ -752,7 +752,7 @@ export async function getProductBySlug(slug: string, view: ProductView = "public
   // A vendor's hidden or unpublished row is not a storefront page, even to
   // someone who guessed the link. The admin view reads it so the desk can act
   // on a listing a shopper cannot reach.
-  const blockedStatuses = ["draft", "pending_review", "rejected", "archived"];
+  const blockedStatuses = ["pending_review", "rejected", "archived"];
   if (
     view !== "admin" &&
     (product.isVisible === false ||
