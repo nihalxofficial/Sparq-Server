@@ -587,6 +587,36 @@ async function rankPricePage(filter: any, direction: 1 | -1, skip: number, limit
   return rows.map((row: any) => row._id);
 }
 
+/**
+ * How many rows each listing-status tab would show.
+ *
+ * Every filter the desk has set counts here except the status itself, so a
+ * badge always says what pressing that tab would list — a search or a category
+ * narrows the numbers exactly as it narrows the table. Platform stock carries
+ * no vendor status and is live by definition, so it counts as "published", and
+ * `all` is the unfiltered-by-status total the "All listings" tab lists.
+ */
+async function countListingStatuses(query: GetProductsQuery) {
+  const conditions = await buildFilterConditions(
+    { ...query, vendorStatus: undefined },
+    { includeHidden: true }
+  );
+  const filter = conditions.length > 0 ? { $and: conditions } : {};
+
+  const rows = await Product.aggregate<{ _id: string | null; count: number }>([
+    { $match: filter },
+    { $group: { _id: "$vendorProductStatus", count: { $sum: 1 } } },
+  ]);
+
+  const counts: Record<string, number> = {};
+  for (const row of rows) {
+    const key = String(row._id ?? "published");
+    counts[key] = (counts[key] ?? 0) + (Number(row.count) || 0);
+  }
+  counts.all = Object.values(counts).reduce((sum, value) => sum + value, 0);
+  return counts;
+}
+
 export async function getProducts(query: GetProductsQuery, view: ProductView = "public") {
   const { page, limit, sort } = query;
 
@@ -627,13 +657,20 @@ export async function getProducts(query: GetProductsQuery, view: ProductView = "
       .filter((doc): doc is any => Boolean(doc));
   };
 
-  const [products, total] = await Promise.all([pageOfProducts(), Product.countDocuments(filter)]);
+  const [products, total, statusCounts] = await Promise.all([
+    pageOfProducts(),
+    Product.countDocuments(filter),
+    view === "admin" ? countListingStatuses(query) : Promise.resolve(undefined),
+  ]);
 
   const ratingsMap = await getRatingsMap(products.map((p) => p._id.toString()));
 
   return {
     products: products.map((p) => formatProduct(p, { ratingsMap, view })),
     total,
+    // The desk's status tabs read their badges from here, one page below the
+    // rows they describe.
+    ...(statusCounts ? { statusCounts } : {}),
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
   };
 }
