@@ -82,7 +82,7 @@ function resolveStatus(input: {
   publish?: boolean;
   stockQuantity?: number | null;
 }): (typeof VENDOR_PRODUCT_STATUSES)[number] {
-  const requested = input.requested ?? (input.publish ? "published" : "draft");
+  const requested = input.requested ?? (input.publish ? "published" : "published");
   if (requested === "published" && typeof input.stockQuantity === "number" && input.stockQuantity <= 0) {
     return "out_of_stock";
   }
@@ -90,7 +90,7 @@ function resolveStatus(input: {
   // honest without a second list of the same strings.
   return VENDOR_PRODUCT_STATUSES.includes(requested as (typeof VENDOR_PRODUCT_STATUSES)[number])
     ? (requested as (typeof VENDOR_PRODUCT_STATUSES)[number])
-    : "draft";
+    : "published";
 }
 
 /** The list screen: rows, per-status counts, paging and the plan's usage. */
