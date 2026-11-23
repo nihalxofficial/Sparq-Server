@@ -18,6 +18,8 @@ router.get("/", attachUser, productController.getProducts);
 router.post("/", requireAuth, requireRole("admin"), validate(createProductSchema), productController.createProduct);
 router.get("/:slug", attachUser, productController.getProductBySlug);
 router.patch("/:id", requireAuth, requireRole("admin"), validate(updateProductSchema), productController.updateProduct);
+router.patch("/:id/archive", requireAuth, requireRole("admin"), productController.archiveProduct);
+router.patch("/:id/unarchive", requireAuth, requireRole("admin"), productController.unarchiveProduct);
 router.delete("/:id", requireAuth, requireRole("admin"), productController.deleteProduct);
 
 export default router;

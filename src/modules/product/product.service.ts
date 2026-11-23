@@ -11,6 +11,7 @@ import { Types } from "mongoose";
 import { CreateProductInput, UpdateProductInput, GetProductsQuery } from "./product.validator";
 import type { WarrantyType } from "../warranty/warranty.types";
 import { VENDOR_LIVE_PRODUCT_STATUSES } from "../vendor/vendor.types";
+import { notifyUser } from "../activity/activity.service";
 
 /**
  * Sort keys the shop and dashboards can ask for. Every one of them ends on
@@ -43,7 +44,7 @@ function escapeRegex(str: string) {
 
 // Fetches avg rating + review count for a batch of products in ONE query.
 // Returns a Map<productIdString, { avgRating, count }> for fast O(1) lookup.
-async function getRatingsMap(productIds: string[]) {
+export async function getRatingsMap(productIds: string[]) {
   const stats = await ProductReview.aggregate([
     { $match: { productId: { $in: productIds.flatMap((id) => idVariants(id)) } } },
     { $group: { _id: { $toString: "$productId" }, avgRating: { $avg: "$rating" }, count: { $sum: 1 } } },
@@ -671,6 +672,54 @@ export async function updateProduct(id: string, data: UpdateProductInput) {
   return formatProduct(product, { view: "admin" });
 }
 
+export async function archiveProductByAdmin(id: string) {
+  const product = await Product.findById(id);
+  if (!product) throw new ApiError(404, "Product not found");
+
+  product.vendorProductStatus = "archived";
+  product.isVisible = false;
+  await product.save();
+
+  await endPlacementForProduct(id, "The listing was archived by admin");
+
+  const targetUserId = product.vendorId ? String(product.vendorId) : product.ownerId ? String(product.ownerId) : null;
+  if (targetUserId) {
+    await notifyUser({
+      userId: targetUserId,
+      role: "vendor",
+      type: "vendor_product",
+      title: "Product Archived",
+      detail: `Your product "${product.title}" has been archived by an administrator.`,
+      ref: `/dashboard/vendor/products`,
+    });
+  }
+
+  return formatProduct(product, { view: "admin" });
+}
+
+export async function unarchiveProductByAdmin(id: string) {
+  const product = await Product.findById(id);
+  if (!product) throw new ApiError(404, "Product not found");
+
+  product.vendorProductStatus = "published";
+  product.isVisible = true;
+  await product.save();
+
+  const targetUserId = product.vendorId ? String(product.vendorId) : product.ownerId ? String(product.ownerId) : null;
+  if (targetUserId) {
+    await notifyUser({
+      userId: targetUserId,
+      role: "vendor",
+      type: "vendor_product",
+      title: "Product Unarchived",
+      detail: `Your product "${product.title}" has been unarchived by an administrator and is now active.`,
+      ref: `/dashboard/vendor/products`,
+    });
+  }
+
+  return formatProduct(product, { view: "admin" });
+}
+
 export async function deleteProduct(id: string) {
   const product = await Product.findByIdAndDelete(id);
   if (!product) throw new ApiError(404, "Product not found");
@@ -679,6 +728,18 @@ export async function deleteProduct(id: string) {
   // the promotions board from showing a shelf that points at a row nobody can
   // open, and frees the shelf for the next listing.
   await endPlacementForProduct(id, "The product was removed");
+
+  const targetUserId = product.vendorId ? String(product.vendorId) : product.ownerId ? String(product.ownerId) : null;
+  if (targetUserId) {
+    await notifyUser({
+      userId: targetUserId,
+      role: "vendor",
+      type: "vendor_product",
+      title: "Product Deleted",
+      detail: `Your product "${product.title}" was deleted by an administrator.`,
+      ref: `/dashboard/vendor/products`,
+    });
+  }
 }
 
 export async function getProductBySlug(slug: string, view: ProductView = "public") {
@@ -717,7 +778,7 @@ export async function getProductBySlug(slug: string, view: ProductView = "public
  * price, and an order cancelled after delivery stops counting. Cost is the
  * product's current cost per unit, the same number the desk shows elsewhere.
  */
-async function realizedSalesFor(product: any) {
+export async function realizedSalesFor(product: any) {
   const productId = String(product._id ?? product.id ?? "");
   const costPrice =
     product.investPrice != null && Number.isFinite(Number(product.investPrice))

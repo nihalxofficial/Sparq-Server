@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 import { ApiError } from "../../utils/apiError";
 import { Product } from "../product/product.model";
-import { formatProduct } from "../product/product.service";
+import { formatProduct, getRatingsMap, realizedSalesFor } from "../product/product.service";
 import { Category } from "../category/category.model";
 import { SubCategory } from "../subcategory/subcategory.model";
 import { VendorStore } from "./vendor-store.model";
@@ -143,16 +143,25 @@ export async function listMyProducts(userId: string, query: VendorProductQuery) 
   };
 }
 
-/** One of the vendor's products, with the category names the form shows. */
-export async function getMyProduct(userId: string, productId: string) {
-  const product = await Product.findOne({ _id: productId, vendorId: userId })
+/** One of the vendor's products, with full categories, store info and realized sales. */
+export async function getMyProduct(userId: string, productId: string, isAdmin = false) {
+  const isId = Types.ObjectId.isValid(productId);
+  const filter = isAdmin
+    ? (isId ? { _id: productId } : { slug: productId })
+    : (isId
+        ? { _id: productId, $or: [{ vendorId: userId }, { ownerId: userId }] }
+        : { slug: productId, $or: [{ vendorId: userId }, { ownerId: userId }] });
+
+  const product = await Product.findOne(filter)
     .populate("categoryId", "name slug")
-    .populate("subCategoryIds", "name slug");
+    .populate("subCategoryIds", "name slug")
+    .populate("storeId", "name slug");
 
   if (!product) throw new ApiError(404, "Product not found");
-  // The seller's own listing, so their cost and margin come back with it — the
-  // same fields the store's edit form reads, and the values the P&L needs.
-  return formatProduct(product, { view: "vendor" });
+
+  const ratingsMap = await getRatingsMap([String(product._id)]);
+  const formatted = formatProduct(product, { ratingsMap, view: "vendor" });
+  return { ...formatted, sales: await realizedSalesFor(product) };
 }
 
 /**

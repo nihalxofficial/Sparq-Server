@@ -49,6 +49,16 @@ export const deleteProduct = catchAsync(async (req, res) => {
   apiResponse(res, 200, null, "Product deleted");
 });
 
+export const archiveProduct = catchAsync(async (req, res) => {
+  const product = await productService.archiveProductByAdmin(req.params.id as string);
+  apiResponse(res, 200, product, "Product archived");
+});
+
+export const unarchiveProduct = catchAsync(async (req, res) => {
+  const product = await productService.unarchiveProductByAdmin(req.params.id as string);
+  apiResponse(res, 200, product, "Product unarchived");
+});
+
 /** Scheduled: closes offers whose deadline has passed. Also callable by an admin. */
 export const expireProductOffers = catchAsync(async (_req, res) => {
   const result = await productService.expireProductOffers();

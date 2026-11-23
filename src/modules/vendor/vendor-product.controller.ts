@@ -1,6 +1,7 @@
 import { catchAsync } from "../../utils/catchAsync";
 import { apiResponse } from "../../utils/apiResponse";
 import { parseQuery } from "../../utils/validate";
+import { isAdminRole } from "../../utils/roles";
 import { vendorProductQuerySchema } from "./vendor-product.validator";
 import * as productService from "./vendor-product.service";
 
@@ -18,7 +19,8 @@ export const listMyProducts = catchAsync(async (req, res) => {
 });
 
 export const getMyProduct = catchAsync(async (req, res) => {
-  const product = await productService.getMyProduct(req.user!.id, req.params.id as string);
+  const isAdmin = isAdminRole(req.user?.role);
+  const product = await productService.getMyProduct(req.user!.id, req.params.id as string, isAdmin);
   apiResponse(res, 200, product, "Product fetched successfully");
 });
 

@@ -10,8 +10,8 @@ import { requireRole } from "../../middlewares/role.middleware";
 
 const router = Router();
 
-// Every route is the vendor's own catalogue; the account comes from the token.
-router.use(requireAuth, requireRole("vendor"));
+// Accessible to vendors and store administrators.
+router.use(requireAuth, requireRole("vendor", "admin"));
 
 router.get("/", controller.listMyProducts);
 router.post("/", validate(createVendorProductSchema), controller.createMyProduct);
