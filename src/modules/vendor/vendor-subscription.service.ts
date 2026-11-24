@@ -577,6 +577,23 @@ export async function checkoutSubscription(
     );
   }
 
+  // One reference settles one period, the same rule an order follows: a wallet
+  // TrxID already spent on a purchase cannot buy a second one. A failed attempt
+  // is not counted, so a corrected retry is still allowed.
+  if (paidByWallet) {
+    const usedReference = await SubscriptionTransaction.findOne({
+      method: input.method,
+      reference,
+      status: { $ne: "failed" },
+    })
+      .select("_id")
+      .lean();
+
+    if (usedReference) {
+      throw new ApiError(400, "That transaction id has already been used on another purchase.");
+    }
+  }
+
   let transaction;
   try {
     transaction = await SubscriptionTransaction.create({
