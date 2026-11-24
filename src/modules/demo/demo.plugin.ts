@@ -20,6 +20,19 @@ export const TRACKED = [
   // screen changes roles: without it a demo visitor could promote themselves to
   // a real admin and keep the account after the nightly restore.
   "user",
+  // The marketplace desks the demo admin can also reach: coupons, the seller
+  // board and reviews, subscriptions and their payments, seller orders, featured
+  // placements and delivery jobs. Without these, a demo change to any of them
+  // outlives the restore.
+  "coupons",
+  "vendorstores",
+  "vendorapplications",
+  "riderapplications",
+  "vendorsubscriptions",
+  "subscriptiontransactions",
+  "vendororders",
+  "featuredpromotions",
+  "deliveries",
 ];
 export const UNDO_COLLECTION = "demo_undo";
 
