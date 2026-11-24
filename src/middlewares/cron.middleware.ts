@@ -1,15 +1,24 @@
+import crypto from "node:crypto";
 import { Request, Response, NextFunction } from "express";
 import { ApiError } from "../utils/apiError";
 import { requireAuth } from "./auth.middleware";
 
 /**
- * Vercel Cron calls a route with `Authorization: Bearer <CRON_SECRET>` when the
- * secret is configured, and always sends `x-vercel-cron: "1"`.
+ * Vercel Cron calls a route with `Authorization: Bearer <CRON_SECRET>`. The
+ * `x-vercel-cron` header it also sends is spoofable, so it is never trusted on
+ * its own: without a configured secret every scheduled HTTP route stays closed.
+ * The in-process jobs in `index.ts` call the services directly and are not
+ * affected by this gate.
  */
-function isCronInvocation(req: Request) {
+function isCronInvocation(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
-  if (secret && req.headers.authorization === `Bearer ${secret}`) return true;
-  return req.headers["x-vercel-cron"] === "1";
+  if (!secret) return false;
+
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (token.length !== secret.length) return false;
+
+  return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(secret));
 }
 
 /**

@@ -38,6 +38,16 @@ async function startServer() {
     console.error("[STARTUP] Demo admin seeding failed:", err);
   }
 
+  // The HTTP cron routes require CRON_SECRET; without it they are closed on
+  // purpose, because the Vercel cron header can be spoofed by anyone.
+  if (!process.env.CRON_SECRET) {
+    console.warn(
+      "[CRON] CRON_SECRET is not set — the HTTP cron endpoints are closed. " +
+        "Set CRON_SECRET (and the same value in Vercel) for Vercel Cron, or rely " +
+        "on the in-process jobs scheduled below."
+    );
+  }
+
   const timezone = process.env.CRON_TIMEZONE || "Asia/Dhaka";
 
   // Schedule daily restore of demo admin changes at 12:00 AM (midnight local time)
