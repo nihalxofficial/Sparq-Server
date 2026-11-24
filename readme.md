@@ -874,6 +874,19 @@ armed only when `VERCEL` is unset, so the jobs never run twice.
   orders, payments and a seller's products are kept as records.
 - The site-settings patch is validated and unknown keys are dropped.
 
+### Payments (demo)
+
+This build has **no payment gateway** — online payment is simulated. The rules
+that keep the demo honest:
+
+- Every non-COD payment is stored with `isDemo: true` and marked `success` at
+  checkout; cash on delivery starts `pending` and settles at the door.
+- A wallet transaction id cannot be reused: a second order with the same
+  reference is refused, so one demo TrxID cannot pay for two orders.
+- Transaction statuses are `pending`, `success`, `failed` and `refunded`.
+  Cancelling an order fails a payment that never landed and marks one that had
+  gone through as `refunded`, which the customer dashboard shows as "Refunded".
+
 ---
 
 ## Development
