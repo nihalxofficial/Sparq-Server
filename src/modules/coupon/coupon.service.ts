@@ -510,15 +510,59 @@ export async function redeemCoupon(
   couponId: unknown,
   params: { orderId: string; customerId: string; amount: number },
   session?: ClientSession
-) {
-  await Coupon.updateOne(
-    { _id: new Types.ObjectId(String(couponId)) },
+): Promise<boolean> {
+  const customerId = new Types.ObjectId(params.customerId);
+
+  /*
+   * The filter re-checks the two allowances at the moment of the write, not the
+   * moment of the read: a `totalUsageLimit` or `perCustomerLimit` that another
+   * checkout used up in between makes this update match nothing, and the caller
+   * turns that into a refusal. A limit of 0 means unlimited.
+   */
+  const result = await Coupon.updateOne(
+    {
+      _id: new Types.ObjectId(String(couponId)),
+      $expr: {
+        $and: [
+          {
+            $or: [
+              { $lte: [{ $ifNull: ["$totalUsageLimit", 0] }, 0] },
+              { $lt: [{ $ifNull: ["$usedCount", 0] }, { $ifNull: ["$totalUsageLimit", 0] }] },
+            ],
+          },
+          {
+            $or: [
+              { $lte: [{ $ifNull: ["$perCustomerLimit", 0] }, 0] },
+              {
+                $lt: [
+                  {
+                    $size: {
+                      $filter: {
+                        input: { $ifNull: ["$redemptions", []] },
+                        as: "r",
+                        cond: {
+                          $and: [
+                            { $eq: ["$$r.customerId", customerId] },
+                            { $eq: [{ $ifNull: ["$$r.reversedAt", null] }, null] },
+                          ],
+                        },
+                      },
+                    },
+                  },
+                  { $ifNull: ["$perCustomerLimit", 0] },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    },
     {
       $inc: { usedCount: 1, discountGiven: params.amount },
       $push: {
         redemptions: {
           orderId: new Types.ObjectId(params.orderId),
-          customerId: new Types.ObjectId(params.customerId),
+          customerId,
           amount: params.amount,
           at: new Date(),
           reversedAt: null,
@@ -527,6 +571,8 @@ export async function redeemCoupon(
     },
     { session: session ?? undefined }
   );
+
+  return (result.modifiedCount ?? 0) > 0;
 }
 
 /**

@@ -502,11 +502,20 @@ export async function createOrder(data: CreateOrderInput, userId: string) {
     // never burns a redemption and every redemption names the order that caused
     // it — which is what lets a cancellation hand the use straight back.
     if (coupon) {
-      await redeemCoupon(
+      const redeemed = await redeemCoupon(
         coupon.couponId,
         { orderId, customerId: userId, amount: couponDiscount },
         session
       );
+      // The code was valid a moment ago; if its allowance went with another
+      // order in between, the update matched nothing and the whole order is
+      // rolled back rather than honoured twice.
+      if (!redeemed) {
+        throw new ApiError(
+          400,
+          "This coupon was just used up by another order. Remove it and try again."
+        );
+      }
     }
 
     const reference = data.paymentMethod === "cod" ? `COD-${orderId}` : data.transactionId!;
