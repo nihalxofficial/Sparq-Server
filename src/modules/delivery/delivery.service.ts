@@ -14,7 +14,7 @@ import { VendorOrder } from "../vendor/vendor-order.model";
 import { VendorStore } from "../vendor/vendor-store.model";
 import { hasWarehouse, warehouseLines } from "../../utils/warehouse";
 import { ApiError } from "../../utils/apiError";
-import { searchOr } from "../../utils/search";
+import { paginate, sortBy, searchOr, where } from "../../utils/query";
 import { hasAnyRole, normalizeRole } from "../../utils/roles";
 import { updateOrderStatus, shipOrderForAcceptedDelivery } from "../order/order.service";
 import { syncVendorOrdersForDelivery } from "../vendor/vendor-order.create";
@@ -1315,48 +1315,49 @@ export async function regenerateOtpForDelivery(deliveryId: string) {
 /** Every job, filtered for the store's delivery page. */
 export async function getAdminDeliveries(query: AdminDeliveryQuery) {
   const { status, riderId, search, sort, page, limit } = query;
-  const conditions: any[] = [];
 
-  if (status === "active") {
-    conditions.push({ status: { $in: ACTIVE_DELIVERY_STATUSES } });
-  } else if (status === "finished") {
-    conditions.push({ status: { $in: FINISHED_DELIVERY_STATUSES } });
-  } else if (status !== "all") {
-    conditions.push({ status });
-  }
+  const statusFilter =
+    status === "active"
+      ? { status: { $in: ACTIVE_DELIVERY_STATUSES } }
+      : status === "finished"
+        ? { status: { $in: FINISHED_DELIVERY_STATUSES } }
+        : status !== "all"
+          ? { status }
+          : null;
 
-  if (riderId && Types.ObjectId.isValid(riderId)) {
-    conditions.push({ riderId: new Types.ObjectId(riderId) });
-  }
+  const filter = where(
+    statusFilter,
+    riderId && Types.ObjectId.isValid(riderId) ? { riderId: new Types.ObjectId(riderId) } : null,
+    search?.trim()
+      ? searchOr(["customerName", "customerPhone", "city", "address"], search, ["_id", "orderId"])
+      : null
+  );
 
-  if (search?.trim()) {
-    conditions.push(
-      searchOr(["customerName", "customerPhone", "city", "address"], search, ["_id", "orderId"])
-    );
-  }
+  const sortCriteria = sortBy(
+    sort,
+    {
+      newest: { createdAt: -1 },
+      oldest: { createdAt: 1 },
+      fee_desc: { fee: -1, createdAt: -1 },
+    },
+    { createdAt: -1 }
+  );
 
-  const sortMap: Record<string, Record<string, 1 | -1>> = {
-    newest: { createdAt: -1 },
-    oldest: { createdAt: 1 },
-    fee_desc: { fee: -1, createdAt: -1 },
-  };
-
-  const filter = conditions.length > 0 ? { $and: conditions } : {};
-
-  const [deliveries, total] = await Promise.all([
-    Delivery.find(filter)
-      .populate("riderId", "name phone image vehicleType vehicleNumber")
-      .sort(sortMap[sort] ?? sortMap.newest)
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .lean(),
-    Delivery.countDocuments(filter),
-  ]);
+  const { items: deliveries, total, pages } = await paginate(
+    () =>
+      Delivery.find(filter)
+        .populate("riderId", "name phone image vehicleType vehicleNumber")
+        .sort(sortCriteria)
+        .lean(),
+    () => Delivery.countDocuments(filter),
+    page,
+    limit
+  );
 
   return {
     deliveries: deliveries.map(toDto),
     total,
-    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    pagination: { page, limit, total, totalPages: pages },
   };
 }
 

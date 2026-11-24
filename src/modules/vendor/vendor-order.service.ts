@@ -1,6 +1,6 @@
 import { Types } from "mongoose";
 import { ApiError } from "../../utils/apiError";
-import { searchOr } from "../../utils/search";
+import { paginate, searchOr, where } from "../../utils/query";
 import { Product } from "../product/product.model";
 import { Order } from "../order/order.model";
 import { Delivery } from "../delivery/delivery.model";
@@ -99,34 +99,39 @@ export function toVendorOrderDto(row: any) {
 /** The seller's incoming orders, filtered and paged. */
 export async function listMyVendorOrders(vendorId: string, query: VendorOrderQuery) {
   const { status, search, page, limit } = query;
-  const conditions: any[] = [{ vendorId: new Types.ObjectId(vendorId) }];
 
-  if (status === "active") {
-    conditions.push({ status: { $in: ACTIVE_STATUSES } });
-  } else if (status === "completed") {
-    conditions.push({ status: { $in: ["shipped", "delivered"] } });
-  } else if (status !== "all") {
-    conditions.push({ status });
-  }
+  const statusFilter =
+    status === "active"
+      ? { status: { $in: ACTIVE_STATUSES } }
+      : status === "completed"
+        ? { status: { $in: ["shipped", "delivered"] } }
+        : status !== "all"
+          ? { status }
+          : null;
 
-  if (search) {
-    conditions.push(searchOr(["orderNumber", "customerName", "city"], search, ["_id", "orderId"]));
-  }
+  const filter = where(
+    { vendorId: new Types.ObjectId(vendorId) },
+    statusFilter,
+    search ? searchOr(["orderNumber", "customerName", "city"], search, ["_id", "orderId"]) : null
+  );
 
-  const filter = { $and: conditions };
+  const { items: rows, total, pages } = await paginate(
+    () =>
+      VendorOrder.find(filter)
+        .populate(
+          "orderId",
+          "orderStatus totalAmount paymentMethod shippingAddress estimatedDelivery"
+        )
+        .sort({ createdAt: -1 })
+        .lean(),
+    () => VendorOrder.countDocuments(filter),
+    page,
+    limit
+  );
 
-  const [rows, total, counts] = await Promise.all([
-    VendorOrder.find(filter)
-      .populate("orderId", "orderStatus totalAmount paymentMethod shippingAddress estimatedDelivery")
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .lean(),
-    VendorOrder.countDocuments(filter),
-    VendorOrder.aggregate([
-      { $match: { vendorId: new Types.ObjectId(vendorId) } },
-      { $group: { _id: "$status", count: { $sum: 1 } } },
-    ]),
+  const counts = await VendorOrder.aggregate([
+    { $match: { vendorId: new Types.ObjectId(vendorId) } },
+    { $group: { _id: "$status", count: { $sum: 1 } } },
   ]);
 
   const typeCounts: Record<string, number> = {};
@@ -136,7 +141,7 @@ export async function listMyVendorOrders(vendorId: string, query: VendorOrderQue
     orders: rows.map(toVendorOrderDto),
     total,
     typeCounts,
-    pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
+    pagination: { page, limit, total, totalPages: pages },
   };
 }
 
