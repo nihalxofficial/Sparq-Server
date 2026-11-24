@@ -1068,20 +1068,10 @@ export async function shipOrderForAcceptedDelivery(orderId: string, riderId?: st
 // ─── Customer Order Response ───────────────────────────────────────────────────
 
 /**
- * What the customer says about an order, and how long they may keep saying it.
- *
- * Three answers: not received yet, cancelled, and received. None of them is
- * final on its own, because a parcel reported missing can still turn up and a
- * hand-over described in the moment can be corrected the next day. The report
- * stays open through delivery and after it, and closes only when the order
- * itself is called off and refunded — after that there is no outcome left to
- * describe, and the conversation belongs to support.
- *
- * "Received" is the customer's own version of reading the code at the door, so
- * it does what the code does: the order settles, the rider's job closes, and the
- * fee the store set on that job is booked as paid. It is the one answer with
- * side effects, which is why it cannot be given while the parcel is still on the
- * shelf — nobody can confirm the arrival of something that has not left.
+ * What the customer says about an order: received, not received yet, or
+ * cancelled. None is final on its own, and the report stays open until the order
+ * is called off and refunded. "Received" has side effects — it settles the order
+ * and closes the rider's job — so it cannot be given before the parcel ships.
  */
 export async function updateCustomerResponse(
   id: string,

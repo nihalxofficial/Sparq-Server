@@ -303,21 +303,10 @@ export async function stopCoupon(id: string, vendorId?: string, mode: "inactive"
 }
 
 /**
- * The store team's control over someone else's code.
- *
- * A seller owns their codes: this desk does not edit them, re-price them or
- * write one in their name. It can only take one off the checkout, put it back,
- * or remove it — a code that misleads shoppers is the marketplace's problem as
- * much as the shop's.
- *
- * The block is written down, not merely flagged: the reason and the moment land
- * on the row, so the seller's own coupons desk can say why the code went quiet
- * instead of leaving them to guess.
- *
- * Unblocking deliberately skips the seller's plan allowance. That check exists
- * so a seller cannot outgrow their rung by themselves; a desk putting a code
- * back is the override, and refusing it here would mean the desk could only
- * undo what the plan still allows.
+ * The store team's control over someone else's code: block, restore or delete.
+ * The reason and the moment are written on the row so the seller can see why
+ * their code went quiet. Unblocking skips the seller's plan allowance on purpose
+ * — the desk putting a code back is the override.
  */
 export async function moderateCoupon(
   id: string,
