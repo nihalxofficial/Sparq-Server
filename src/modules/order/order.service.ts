@@ -252,9 +252,18 @@ async function applyCancellation(
   previousStatus: string,
   session?: ClientSession
 ) {
+  // A payment that never landed is failed; one that already went through is
+  // handed back. Cash on delivery sat at "pending", so cancelling before the
+  // door simply fails it; an online payment that read "success" becomes a refund
+  // to the wallet the buyer used.
   await Transaction.updateMany(
-    { orderId, status: { $ne: "failed" } },
+    { orderId, status: "pending" },
     { $set: { status: "failed" } },
+    { session }
+  );
+  await Transaction.updateMany(
+    { orderId, status: "success" },
+    { $set: { status: "refunded" } },
     { session }
   );
 
@@ -549,9 +558,32 @@ export async function createOrder(data: CreateOrderInput, userId: string) {
       }
     }
 
-    const reference = data.paymentMethod === "cod" ? `COD-${orderId}` : data.transactionId!;
+    const isCash = data.paymentMethod === "cod";
+    const reference = isCash
+      ? `COD-${orderId}`
+      : String(data.transactionId).trim().toUpperCase().replace(/[\s-]/g, "");
+
+    // A wallet reference names one payment, so it cannot settle two orders. The
+    // check runs inside the order's transaction, so a reference already spent
+    // refuses this checkout instead of quietly duplicating it. There is no
+    // gateway here, so this is the only thing standing between a demo TrxID and
+    // a second free order.
+    if (!isCash) {
+      const usedReference = await Transaction.findOne({
+        reference,
+        method: data.paymentMethod,
+      })
+        .select("_id")
+        .session(session ?? null)
+        .lean();
+
+      if (usedReference) {
+        throw new ApiError(400, "That transaction id has already been used on another order.");
+      }
+    }
+
     await createTransaction(
-      { orderId, userId, method: data.paymentMethod, amount: totalAmount, reference },
+      { orderId, userId, method: data.paymentMethod, amount: totalAmount, reference, isDemo: !isCash },
       session
     );
 

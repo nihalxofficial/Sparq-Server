@@ -14,12 +14,19 @@ export async function createTransaction(
     method: PaymentMethod;
     amount: number;
     reference: string;
+    /** Simulated payment (this build has no gateway). */
+    isDemo?: boolean;
   },
   session?: ClientSession
 ) {
+  const isCashOnDelivery = params.method === "cod";
+
   const transaction = new Transaction({
     ...params,
-    status: params.method === "cod" ? "pending" : "success",
+    // Cash is collected at the door, so it starts pending; an online payment is
+    // a demo that succeeds at once.
+    status: isCashOnDelivery ? "pending" : "success",
+    isDemo: params.isDemo ?? !isCashOnDelivery,
   });
 
   await transaction.save({ session });

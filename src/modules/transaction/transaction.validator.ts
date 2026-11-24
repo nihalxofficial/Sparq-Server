@@ -6,7 +6,7 @@ const objectId = objectIdSchema("Invalid ID");
 export const getTransactionsQuerySchema = z.object({
   userId: objectId.optional(),
   orderId: objectId.optional(),
-  status: z.enum(["all", "pending", "success", "failed"]).optional(),
+  status: z.enum(["all", "pending", "success", "failed", "refunded"]).optional(),
   method: z.enum(["all", "cod", "bkash", "rocket", "nagad"]).optional(),
   search: z.string().optional(),
   sort: z.enum(["newest", "oldest", "amount_asc", "amount_desc"]).optional(),
