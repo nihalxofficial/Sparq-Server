@@ -404,19 +404,27 @@ GET    /api/vendor-admin/:id       👑  One seller's board
 GET    /api/transactions/vendor    Vendor  Own payment rows
 ```
 
-#### Slides & Promos
+#### Hero Banners & Promos
 
 ```
-GET    /api/slides      🌐  List hero slides
-POST   /api/slides      👑  Create slide
-PATCH  /api/slides/:id  👑  Update slide
-DELETE /api/slides/:id  👑  Delete slide
+GET    /api/banners        🌐  Eligible homepage banners (published, in window)
+GET    /api/banners/admin  👑  Every banner, drafts and past ones
+POST   /api/banners        👑  Create banner
+PATCH  /api/banners/:id    👑  Update banner
+DELETE /api/banners/:id    👑  Delete banner
 
 GET    /api/promos      🌐  List promo banners
 POST   /api/promos      👑  Create promo
 PATCH  /api/promos/:id  👑  Update promo
 DELETE /api/promos/:id  👑  Delete promo
 ```
+
+A banner is a picture and a destination. Its `type` — `product`, `category`,
+`vendor` or `custom` — decides the target, and the API resolves the public link
+at read time. The homepage read returns only banners that are published and
+inside their date window, and skips any whose product, category or shop has
+since been removed. Status (draft / scheduled / active / expired) is derived
+from the publish switch and the dates, never stored.
 
 #### Files
 
@@ -805,7 +813,7 @@ src/
 │   ├── review/                Reviews
 │   ├── address/               Saved addresses
 │   ├── coupon/                Store coupons
-│   ├── slide/                 Hero slider
+│   ├── banner/                Hero banners
 │   ├── promo/                 Promo banners
 │   ├── contact/               Contact form
 │   ├── message/               Stored messages
