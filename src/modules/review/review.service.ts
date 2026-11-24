@@ -67,7 +67,6 @@ function formatReview(r: any, user?: any, product?: any) {
     userId: r.userId?.toString(),
     userName: user?.name || "Anonymous",
     userAvatar: user?.image,
-    userEmail: user?.email || "",
     rating: r.rating,
     comment: r.comment,
     images: Array.isArray(r.images) ? r.images : [],

@@ -1,5 +1,11 @@
-import { Types } from "mongoose";
+import mongoose, { Types } from "mongoose";
 import { User } from "./user.model";
+import { Cart } from "../cart/cart.model";
+import { Wishlist } from "../wishlist/wishlist.model";
+import { Address } from "../address/address.model";
+import { ProductReview } from "../review/review.model";
+import { VendorApplication } from "../vendor/vendor-application.model";
+import { RiderApplication } from "../rider/rider-application.model";
 import { ApiError } from "../../utils/apiError";
 import {
   GetUsersQuery,
@@ -79,9 +85,43 @@ export async function updateUser(id: string, data: UpdateUserInput) {
   return user;
 }
 
+/**
+ * Removes an account and the private rows that only existed for it.
+ *
+ * The account's own data goes with it — cart, wishlist, addresses, reviews and
+ * any pending vendor or rider file — together with the better-auth session and
+ * account rows, so a token it still holds cannot sign it back in. Orders,
+ * payments and a seller's products are business records shared with buyers and
+ * the store, so they stay; only the person behind them is removed.
+ */
 export async function deleteUser(id: string) {
-  const user = await User.findByIdAndDelete(id);
+  if (!Types.ObjectId.isValid(id)) throw new ApiError(404, "User not found");
+  const user = await User.findById(id);
   if (!user) throw new ApiError(404, "User not found");
+
+  const objectId = new Types.ObjectId(id);
+  // The personal models store the id either as an ObjectId or, in older rows,
+  // as text, so both forms are matched.
+  const owner = { userId: { $in: [objectId, id] } };
+
+  await Promise.all([
+    Cart.deleteMany(owner),
+    Wishlist.deleteMany(owner),
+    Address.deleteMany(owner),
+    ProductReview.deleteMany(owner),
+    VendorApplication.deleteMany(owner),
+    RiderApplication.deleteMany(owner),
+  ]);
+
+  const db = mongoose.connection.db;
+  if (db) {
+    await Promise.all([
+      db.collection("session").deleteMany({ userId: { $in: [objectId, id] } }),
+      db.collection("account").deleteMany({ userId: { $in: [objectId, id] } }),
+    ]);
+  }
+
+  await User.findByIdAndDelete(id);
 
   // Written from the copy that was just removed, so the feed can still name
   // who it was now that the account is gone.
