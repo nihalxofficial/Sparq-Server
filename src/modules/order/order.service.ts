@@ -33,7 +33,8 @@ import {
   releaseCouponForOrder,
 } from "../coupon/coupon.service";
 import { sellingPriceOf } from "../product/product.service";
-import { escapeRegex } from "../../utils/regex";
+import { roundMoney } from "../../utils/money";
+import { searchOr } from "../../utils/search";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -200,7 +201,7 @@ async function buildOrderItems(items: CreateOrderInput["items"]) {
     });
   }
 
-  return { orderItems, subtotal: Math.round(subtotal * 100) / 100 };
+  return { orderItems, subtotal: roundMoney(subtotal) };
 }
 
 /**
@@ -230,17 +231,12 @@ async function resolveShipping(subtotal: number, requested?: "free" | "standard"
 }
 
 /** Free-text search over customer name, city, payment method and ids. */
-function buildOrderSearchCondition(search: string) {
-  const raw = search.trim();
-  const safe = escapeRegex(raw);
-  const matches: any[] = [
-    { "shippingAddress.fullName": { $regex: safe, $options: "i" } },
-    { "shippingAddress.city":     { $regex: safe, $options: "i" } },
-    { paymentMethod:              { $regex: safe, $options: "i" } },
-  ];
-  if (/^[0-9a-fA-F]{24}$/.test(raw)) matches.push({ _id: raw }, { userId: raw });
-  return { $or: matches };
-}
+const buildOrderSearchCondition = (search: string) =>
+  searchOr(
+    ["shippingAddress.fullName", "shippingAddress.city", "paymentMethod"],
+    search,
+    ["_id", "userId"]
+  );
 
 /**
  * Cancelling: fail the payment, put the stock back, and — when the order had
@@ -413,7 +409,7 @@ async function redeemPoints(
     pointsRedeemed: pointsToRedeem,
     // Rounded to the cent so a rate like 150 points per unit cannot leave a
     // fraction of a cent on the bill.
-    pointsDiscount: Math.round((pointsToRedeem / config.perCurrency) * 100) / 100,
+    pointsDiscount: roundMoney(pointsToRedeem / config.perCurrency),
   };
 }
 
@@ -507,10 +503,9 @@ export async function createOrder(data: CreateOrderInput, userId: string) {
       ? await redeemPoints(userId, subtotal - couponDiscount, pointsRequested, pointsConfig, session)
       : { pointsRedeemed: 0, pointsDiscount: 0 };
 
-    // Rounded to the cent: a rate such as 150 points per unit or a percentage
-    // coupon leaves fractions that would otherwise reach the customer's bill.
-    const totalAmount =
-      Math.round((subtotal - couponDiscount + shipping.fee - redemption.pointsDiscount) * 100) / 100;
+    const totalAmount = roundMoney(
+      subtotal - couponDiscount + shipping.fee - redemption.pointsDiscount
+    );
     // Points are earned on what is really paid for the products, never on the
     // part that a code or the customer's own points covered.
     const pointsEarned = Math.floor(

@@ -3,6 +3,7 @@ import type { ClientSession } from "mongoose";
 import { Coupon } from "./coupon.model";
 import { Product } from "../product/product.model";
 import { sellingPriceOf } from "../product/product.service";
+import { roundMoney as money } from "../../utils/money";
 import { ApiError } from "../../utils/apiError";
 import type { CouponQuery, CreateCouponInput, UpdateCouponInput } from "./coupon.validator";
 
@@ -34,11 +35,6 @@ export interface CouponOutcome {
   /** What the code is allowed to touch — a vendor code rarely covers the whole cart. */
   eligibleSubtotal: number;
   discount: number;
-}
-
-/** Rounds money the way the rest of the API does. */
-function money(value: number): number {
-  return Math.round(value * 100) / 100;
 }
 
 /** The four states a code can be in, which is what both lists filter on. */

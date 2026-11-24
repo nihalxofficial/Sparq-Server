@@ -17,7 +17,7 @@ import {
 import { getMembershipTier } from "../order/order.service";
 import { recordActivity, notifyUser } from "../activity/activity.service";
 import { normalizeRole, normalizeRoles } from "../../utils/roles";
-import { escapeRegex } from "../../utils/regex";
+import { searchOr } from "../../utils/search";
 
 export async function getUsers(query: GetUsersQuery) {
   const { role, status, member, search, page, limit } = query;
@@ -30,14 +30,7 @@ export async function getUsers(query: GetUsersQuery) {
   if (member) filter.member = member;
   // Optional search across name and email fields (case-insensitive)
   if (search?.trim()) {
-    const q = search.trim();
-    const searchRegex = new RegExp(escapeRegex(q), "i");
-    const searchOr: Record<string, any>[] = [{ name: searchRegex }, { email: searchRegex }];
-    // A notification links to the exact account by its id. Without this the
-    // email fallback is a substring match, so one admin address can pull up
-    // every address that merely contains it.
-    if (/^[0-9a-fA-F]{24}$/.test(q)) searchOr.push({ _id: q });
-    filter.$or = searchOr;
+    filter.$or = searchOr(["name", "email"], search, ["_id"]).$or;
   }
 
   const skip = (page - 1) * limit;

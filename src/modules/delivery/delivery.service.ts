@@ -14,7 +14,7 @@ import { VendorOrder } from "../vendor/vendor-order.model";
 import { VendorStore } from "../vendor/vendor-store.model";
 import { hasWarehouse, warehouseLines } from "../../utils/warehouse";
 import { ApiError } from "../../utils/apiError";
-import { escapeRegex } from "../../utils/regex";
+import { searchOr } from "../../utils/search";
 import { hasAnyRole, normalizeRole } from "../../utils/roles";
 import { updateOrderStatus, shipOrderForAcceptedDelivery } from "../order/order.service";
 import { syncVendorOrdersForDelivery } from "../vendor/vendor-order.create";
@@ -1330,16 +1330,9 @@ export async function getAdminDeliveries(query: AdminDeliveryQuery) {
   }
 
   if (search?.trim()) {
-    const q = search.trim();
-    const safe = escapeRegex(q);
-    const matches: any[] = [
-      { customerName: { $regex: safe, $options: "i" } },
-      { customerPhone: { $regex: safe, $options: "i" } },
-      { city: { $regex: safe, $options: "i" } },
-      { address: { $regex: safe, $options: "i" } },
-    ];
-    if (/^[0-9a-fA-F]{24}$/.test(q)) matches.push({ _id: q }, { orderId: q });
-    conditions.push({ $or: matches });
+    conditions.push(
+      searchOr(["customerName", "customerPhone", "city", "address"], search, ["_id", "orderId"])
+    );
   }
 
   const sortMap: Record<string, Record<string, 1 | -1>> = {

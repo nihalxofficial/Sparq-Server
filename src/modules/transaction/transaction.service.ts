@@ -2,7 +2,7 @@ import { ClientSession, Types } from "mongoose";
 import { Transaction } from "./transaction.model";
 import { VendorOrder } from "../vendor/vendor-order.model";
 import { GetTransactionsQuery } from "./transaction.validator";
-import { escapeRegex } from "../../utils/regex";
+import { searchOr } from "../../utils/search";
 
 export type PaymentMethod = "cod" | "bkash" | "rocket" | "nagad";
 
@@ -47,15 +47,7 @@ export async function getTransactions(query: GetTransactionsQuery) {
   if (method && method !== "all") conditions.push({ method: method.toLowerCase() });
 
   if (search?.trim()) {
-    const q = search.trim();
-    const safe = escapeRegex(q);
-    const isId = /^[0-9a-fA-F]{24}$/.test(q);
-    const searchOr: any[] = [
-      { reference: { $regex: safe, $options: "i" } },
-      { method: { $regex: safe, $options: "i" } },
-    ];
-    if (isId) searchOr.push({ _id: q }, { userId: q }, { orderId: q });
-    conditions.push({ $or: searchOr });
+    conditions.push(searchOr(["reference", "method"], search, ["_id", "userId", "orderId"]));
   }
 
   const filter = conditions.length > 0 ? { $and: conditions } : {};
@@ -115,15 +107,7 @@ export async function getVendorTransactions(vendorId: string, query: GetTransact
   if (method && method !== "all") conditions.push({ method: method.toLowerCase() });
 
   if (search?.trim()) {
-    const q = search.trim();
-    const safe = escapeRegex(q);
-    const isId = /^[0-9a-fA-F]{24}$/.test(q);
-    const searchOr: any[] = [
-      { reference: { $regex: safe, $options: "i" } },
-      { method: { $regex: safe, $options: "i" } },
-    ];
-    if (isId) searchOr.push({ _id: q }, { orderId: q });
-    conditions.push({ $or: searchOr });
+    conditions.push(searchOr(["reference", "method"], search, ["_id", "orderId"]));
   }
 
   // The seller's rows are the only orders they may read, and the same filter is
