@@ -365,14 +365,15 @@ export async function buildSubCategoryCondition(subCategory: string) {
   return { $or: matches };
 }
 
-/** Free-text search across title, description and specifications. */
+/** Free-text search across title, description, brand and SKU. */
 function buildSearchCondition(search: string) {
   const searchRegex = new RegExp(escapeRegex(search.trim()), "i");
   return {
     $or: [
       { title: searchRegex },
       { description: searchRegex },
-      { "specifications.$**": searchRegex },
+      { brand: searchRegex },
+      { sku: searchRegex },
     ],
   };
 }
