@@ -1,17 +1,10 @@
 /**
- * The order status flow.
+ * The order status flow — forward only, one step at a time. `cancelled` is
+ * reachable from any stage not yet handed over, and closed for good;
+ * `delivered` is closed too (a later problem is a return, not a status rewrite).
  *
  *   confirmed ──▶ processing ──▶ shipped ──▶ delivered
- *       │             │            │
  *       └─────────────┴────────────┴──▶ cancelled
- *
- * Rules:
- * - An order only moves forward, one step at a time.
- * - "cancelled" can be reached from any stage that has not been handed over,
- *   and has no way out: a refunded order can never be revived.
- * - "delivered" is closed too. The sale ended when the parcel changed hands, so
- *   a later problem is a return or a refund, not a status that rewrites a
- *   completed delivery.
  */
 export const ORDER_STATUSES = [
   "confirmed",

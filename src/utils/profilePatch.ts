@@ -1,20 +1,9 @@
 /**
- * Merging one section of a form into a document.
+ * Merging one section of a profile form into a document.
  *
- * The profile screens — the rider's and the vendor's — show every field the
- * application wizard once collected, including the ones nobody ever filled. A
- * Save from one of those forms therefore carries a handful of sections, each
- * with a handful of keys, and the rules that matter are the ones a form forces:
- *
- * - A key the caller never sent is not touched. Fixing a licence number must
- *   not blank the emergency contact on the same document.
- * - A key whose value already matches is not an edit. Comparing `15` from an
- *   input box with `15` in the file as "different" would rewrite the row, stamp
- *   `updatedAt` and add a history line for nothing that happened.
- *
- * Both sides of those rules live here rather than in either module, because the
- * rider file and the vendor file are read by their own services and have to
- * answer a Save the same way.
+ * Two form rules live here for both the rider and the vendor file: a key the
+ * caller never sent is not touched, and a key whose value already matches is not
+ * an edit (so `updatedAt` and the history stay honest).
  */
 
 /**
