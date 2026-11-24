@@ -69,7 +69,18 @@ export async function createVendorOrdersForOrder(order: any, session?: ClientSes
   // rather than a second group.
   return VendorOrder.create(rows, { session: session ?? undefined, ordered: false }).catch(
     (error: any) => {
-      if (error?.code === 11000 || error?.writeErrors?.length) return [];
+      const writeErrors: any[] = error?.writeErrors || [];
+      if (writeErrors.length > 0) {
+        // `ordered: false` reports one entry per failed row. Ignoring every
+        // failure would hide a real one and leave the order without a seller's
+        // group; only duplicate keys (a replayed checkout) are ignorable.
+        const allDuplicates = writeErrors.every(
+          (entry) => entry?.code === 11000 || entry?.err?.code === 11000
+        );
+        if (allDuplicates) return [];
+        throw error;
+      }
+      if (error?.code === 11000) return [];
       throw error;
     }
   );
