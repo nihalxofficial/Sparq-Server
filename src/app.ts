@@ -38,6 +38,7 @@ import promotionRoutes from "./modules/vendor/featured-promotion.route";
 import vendorPromotionRoutes from "./modules/vendor/vendor-promotion.route";
 import riderApplicationRoutes from "./modules/rider/rider-application.route";
 import fileRoutes from "./modules/file/file.route";
+import currencyRoutes from "./modules/currency/currency.route";
 import { errorMiddleware } from "./middlewares/error.middleware";
 import { notFound } from "./middlewares/notFound.middleware";
 
@@ -122,6 +123,7 @@ app.use("/api/vendor-coupons", vendorCouponRoutes);
 app.use("/api/promotions", promotionRoutes);
 app.use("/api/vendor-promotions", vendorPromotionRoutes);
 app.use("/api/rider-applications", riderApplicationRoutes);
+app.use("/api/currency", currencyRoutes);
 app.use("/api/demo", demoRoutes);
 
 app.use(notFound);

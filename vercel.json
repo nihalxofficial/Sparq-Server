@@ -26,6 +26,10 @@
     {
       "path": "/api/products/expire",
       "schedule": "45 19 * * *"
+    },
+    {
+      "path": "/api/currency/refresh",
+      "schedule": "0 2 * * *"
     }
   ],
   "routes": [

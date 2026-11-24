@@ -188,6 +188,13 @@ const siteSettingsSchema = new Schema(
 
     // ── Misc
     currency: { type: String, default: "USD" },
+    // The day's rates against `base`, filled by the currency cron job. The app
+    // prices in the store's own currency; these only convert for display.
+    currencyRates: {
+      base: { type: String, default: "USD" },
+      rates: { type: Object, default: {} },
+      updatedAt: { type: Date, default: null },
+    },
     timezone: { type: String, default: "Asia/Dhaka" },
     maintenanceMode: { type: Boolean, default: false },
     footerCopyright: { type: String, default: "" },

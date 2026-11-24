@@ -7,6 +7,7 @@ import { restoreDemoChanges } from "./modules/demo/demo.service";
 import { expireStaleDeliveries } from "./modules/delivery/delivery.service";
 import { expireDueSubscriptions } from "./modules/vendor/vendor-subscription.service";
 import { expireDuePromotions } from "./modules/vendor/featured-promotion.service";
+import { refreshCurrencyRates } from "./modules/currency/currency.service";
 import { syncLegacyRoles, ensureDemoAdmin } from "./modules/user/user.service";
 
 async function startServer() {
@@ -121,12 +122,27 @@ async function startServer() {
     },
     { timezone }
   );
+
+  // The day's exchange rates, so a price shown in another currency matches the
+  // real market. Also exposed as GET /api/currency/refresh.
+  cron.schedule(
+    "0 2 * * *",
+    async () => {
+      try {
+        const result = await refreshCurrencyRates();
+        console.log(`[CRON] 💱 Currency rates refreshed (${result.count} currencies)`);
+      } catch (err) {
+        console.error("[CRON] ❌ Failed to refresh currency rates:", err);
+      }
+    },
+    { timezone }
+  );
   }
 
   app.listen(ENV.PORT, () => {
     console.log(`Server running on port ${ENV.PORT}`);
     console.log(
-      `[CRON] Demo restore 12:00 AM · vendor periods 12:45 AM · placements 1:00 AM · deliveries every 10 min`
+      `[CRON] Demo restore 12:00 AM · vendor periods 12:45 AM · placements 1:00 AM · rates 2:00 AM · deliveries every 10 min`
     );
   });
 }
