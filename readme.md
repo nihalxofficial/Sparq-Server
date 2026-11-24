@@ -130,7 +130,7 @@ Request
 - 🌐 **Public** - No auth required
 - 🔐 **Bearer** - Valid JWT token required
 - 👑 **Admin** - Admin or demo admin role required
-- ⏰ **Cron** - CRON_SECRET or Vercel cron header required
+- ⏰ **Cron** - Bearer `CRON_SECRET` required (the `x-vercel-cron` header alone is not trusted)
 - 🔑 **Internal** - INTERNAL_API_KEY required (frontend only)
 
 ---
@@ -755,9 +755,9 @@ src/
 | `MONGODB_URI` | MongoDB connection string |
 | `DATABASE` | Database name |
 | `PORT` | Server port (5000) |
-| `NEXT_PUBLIC_CLIENT_URL` | Frontend URL (for JWKS) |
+| `NEXT_PUBLIC_CLIENT_URL` | Frontend URL (for JWKS and CORS) |
 | `INTERNAL_API_KEY` | Shared secret with frontend |
-| `CRON_SECRET` | Protects cron endpoints |
+| `CRON_SECRET` | Bearer secret for the scheduled HTTP routes |
 
 ### Email Configuration
 
@@ -776,6 +776,8 @@ src/
 |----------|---------|
 | `DEMO_ADMIN_EMAIL` | Demo admin email |
 | `CRON_TIMEZONE` | UTC |
+| `CORS_ORIGINS` | Comma-separated browser origins allowed by CORS (falls back to `NEXT_PUBLIC_CLIENT_URL`) |
+| `FILE_URL_SECRET` | HMAC key for signed document links (falls back to `INTERNAL_API_KEY`) |
 
 ---
 
@@ -799,39 +801,51 @@ Configured in `vercel.json`:
 ```json
 {
   "crons": [
-    {
-      "path": "/api/demo/restore",
-      "schedule": "0 18 * * *"
-    },
-    {
-      "path": "/api/warranties/expire",
-      "schedule": "30 18 * * *"
-    },
-    {
-      "path": "/api/deliveries/expire",
-      "schedule": "0 18 * * *"
-    },
-    {
-      "path": "/api/vendor-subscription/expire",
-      "schedule": "15 19 * * *"
-    },
-    {
-      "path": "/api/promotions/expire",
-      "schedule": "30 19 * * *"
-    }
+    { "path": "/api/demo/restore", "schedule": "0 18 * * *" },
+    { "path": "/api/deliveries/expire", "schedule": "0 18 * * *" },
+    { "path": "/api/vendor-subscription/expire", "schedule": "15 19 * * *" },
+    { "path": "/api/promotions/expire", "schedule": "30 19 * * *" },
+    { "path": "/api/products/expire", "schedule": "45 19 * * *" }
   ]
 }
 ```
 
+Every scheduled route requires `Authorization: Bearer <CRON_SECRET>`. Vercel sends
+that header automatically once `CRON_SECRET` is set in the project, so the secret
+must be configured or the jobs are refused. The `x-vercel-cron` header Vercel also
+sends is spoofable and is never trusted on its own. A long-running host (not
+Vercel) instead runs the same sweeps with `node-cron` in-process; those timers are
+armed only when `VERCEL` is unset, so the jobs never run twice.
+
 ### Production Checklist
 
-- [ ] Set strong `CRON_SECRET` and `INTERNAL_API_KEY`
+- [ ] Set a strong `CRON_SECRET` (required for the scheduled routes) and `INTERNAL_API_KEY`
 - [ ] Configure MongoDB Atlas whitelist
 - [ ] Set up production SMTP
 - [ ] Update `NEXT_PUBLIC_CLIENT_URL` to production frontend
+- [ ] Set `CORS_ORIGINS` to the production storefront origin(s)
 - [ ] Test all cron jobs
 - [ ] Verify email delivery
 - [ ] Set `NODE_ENV=production`
+- [ ] Add an edge rate limit in front of `/api/coupons/validate` and `POST /api/orders`
+
+### Security Notes
+
+- Suspended accounts are refused at the API, not only in the interface, and a
+  session token past its `expiresAt` no longer authenticates.
+- Scheduled HTTP routes require `CRON_SECRET`; the `x-vercel-cron` header is not
+  trusted on its own.
+- The delivery fee is re-derived on the server — a request cannot post
+  `shippingMethod: "free"` to escape the charge.
+- Coupon usage and per-customer limits are re-checked at the moment of the
+  write, and a stock decrement carries its own guard, so two orders cannot both
+  spend the last unit or the last redemption.
+- Application documents are read only through the signed link the upload
+  returns, or a store-team token. Links issued before this change carry no
+  signature and must be re-uploaded.
+- Account deletion removes the account's own rows and its better-auth sessions;
+  orders, payments and a seller's products are kept as records.
+- The site-settings patch is validated and unknown keys are dropped.
 
 ---
 
