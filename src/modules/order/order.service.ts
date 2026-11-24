@@ -34,7 +34,7 @@ import {
 } from "../coupon/coupon.service";
 import { sellingPriceOf } from "../product/product.service";
 import { roundMoney } from "../../utils/money";
-import { searchOr } from "../../utils/search";
+import { paginate, sortBy, searchOr, where } from "../../utils/query";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -704,42 +704,44 @@ function vendorStanding(rows: { status: string }[]) {
 
 export async function getOrders(query: GetOrdersQuery) {
   const { userId, status, vendor, search, sort, page, limit } = query;
-  const conditions: any[] = [];
-
-  if (userId) conditions.push({ userId });
-  if (status && status !== "all") conditions.push({ orderStatus: status.toLowerCase() });
 
   // The seller's answer lives on the seller rows, not on the order, so the
   // filter resolves the orders first and then narrows to them.
-  if (vendor && vendor !== "all") {
-    const vendorOrderIds = await VendorOrder.find({
-      status: { $in: VENDOR_FILTER_STATUSES[vendor] },
-    }).distinct("orderId");
-    conditions.push({ _id: { $in: vendorOrderIds } });
-  }
+  const vendorOrderIds =
+    vendor && vendor !== "all"
+      ? await VendorOrder.find({ status: { $in: VENDOR_FILTER_STATUSES[vendor] } }).distinct(
+          "orderId"
+        )
+      : null;
 
-  if (search?.trim()) conditions.push(buildOrderSearchCondition(search));
+  const filter = where(
+    userId ? { userId } : null,
+    status && status !== "all" ? { orderStatus: status.toLowerCase() } : null,
+    vendorOrderIds ? { _id: { $in: vendorOrderIds } } : null,
+    search?.trim() ? buildOrderSearchCondition(search) : null
+  );
 
-  const filter = conditions.length > 0 ? { $and: conditions } : {};
+  const sortCriteria = sortBy(
+    sort,
+    {
+      newest: { createdAt: -1 },
+      oldest: { createdAt: 1 },
+      total_asc: { totalAmount: 1 },
+      total_desc: { totalAmount: -1 },
+    },
+    { createdAt: -1 }
+  );
 
-  const sortMap: Record<string, Record<string, 1 | -1>> = {
-    newest:     { createdAt: -1 },
-    oldest:     { createdAt:  1 },
-    total_asc:  { totalAmount:  1 },
-    total_desc: { totalAmount: -1 },
-  };
-  const sortCriteria = sortMap[sort ?? ""] ?? { createdAt: -1 };
-
-  const skip = (page - 1) * limit;
-  const [orders, total] = await Promise.all([
-    Order.find(filter)
-      .populate("userId", "name email image avatar")
-      .populate("items.productId")
-      .sort(sortCriteria)
-      .skip(skip)
-      .limit(limit),
-    Order.countDocuments(filter),
-  ]);
+  const { items: orders, total, pages } = await paginate(
+    () =>
+      Order.find(filter)
+        .populate("userId", "name email image avatar")
+        .populate("items.productId")
+        .sort(sortCriteria),
+    () => Order.countDocuments(filter),
+    page,
+    limit
+  );
 
   // Whether a rider already holds the job decides what the store may still do to
   // an order, and the status menu lives on this list. So the live claim comes
@@ -796,7 +798,7 @@ export async function getOrders(query: GetOrdersQuery) {
       };
     }),
     total,
-    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    pagination: { page, limit, total, totalPages: pages },
   };
 }
 
