@@ -41,7 +41,7 @@ This is the backend API for [Sparq](https://github.com/demoprojectbdsoft/Sparq-E
 ✅ Business Rules         All prices, discounts, totals computed server-side
 ✅ Authorization          Session/JWT verification, role guards, ownership checks
 ✅ Data Integrity         Transactional operations (orders, points, stock)
-✅ Scheduled Jobs         Demo restore, delivery offers, vendor periods, placements
+✅ Scheduled Jobs         Demo restore, delivery offers, vendor periods, placements, daily rates
 ✅ Email Delivery         SMTP emails for orders and password resets
 ✅ Document Storage       Applicant uploads, kept behind a signed link
 ```
@@ -425,6 +425,17 @@ POST   /api/files            🔑  Upload a document (frontend only)
 GET    /api/files/:id/:name  🔐  Read one (signed link, or a staff token)
 GET    /api/files/:id        🔐  Same, without the filename
 ```
+
+#### Currency
+
+```
+GET    /api/currency/refresh  ⏰  Pull the day's exchange rates (cron or admin)
+```
+
+The shop prices in one currency. The daily job pulls the day's rates from a free
+provider and stores them on the site settings; the storefront uses them only to
+**convert a price for display** (see the storefront README). A failed fetch is
+never written, so the last good table stays until the next run.
 
 #### Site Settings & Support
 
@@ -893,7 +904,8 @@ Configured in `vercel.json`:
     { "path": "/api/deliveries/expire", "schedule": "0 18 * * *" },
     { "path": "/api/vendor-subscription/expire", "schedule": "15 19 * * *" },
     { "path": "/api/promotions/expire", "schedule": "30 19 * * *" },
-    { "path": "/api/products/expire", "schedule": "45 19 * * *" }
+    { "path": "/api/products/expire", "schedule": "45 19 * * *" },
+    { "path": "/api/currency/refresh", "schedule": "0 2 * * *" }
   ]
 }
 ```
