@@ -4,7 +4,7 @@
 
 **REST API for E-Commerce Platform**
 
-Express 5 + MongoDB backend powering multi-vendor marketplace with loyalty, warranties, and comprehensive CMS
+Express 5 + MongoDB backend powering a multi-vendor marketplace with loyalty points, rider delivery and GPS tracking, discount codes, paid placements, and a CMS
 
 [![API Status](https://img.shields.io/badge/API-Running-success?style=flat-square)](https://sparq-api.vercel.app)
 [![Backend](https://img.shields.io/badge/Backend-Express_5-green?style=flat-square&logo=express)](https://github.com/demoprojectbdsoft/Sparq-Server)
@@ -20,12 +20,14 @@ Express 5 + MongoDB backend powering multi-vendor marketplace with loyalty, warr
 2. [Architecture](#architecture)
 3. [API Reference](#api-reference)
 4. [Business Logic](#business-logic)
-5. [Security](#security)
-6. [Tech Stack](#tech-stack)
-7. [Quick Start](#quick-start)
-8. [Project Structure](#project-structure)
-9. [Environment Setup](#environment-setup)
-10. [Deployment](#deployment)
+5. [Implementation Status](#implementation-status)
+6. [Demo Admin Mode](#demo-admin-mode)
+7. [Tech Stack](#tech-stack)
+8. [Quick Start](#quick-start)
+9. [Project Structure](#project-structure)
+10. [Environment Setup](#environment-setup)
+11. [Deployment](#deployment)
+12. [Development](#development)
 
 ---
 
@@ -37,10 +39,11 @@ This is the backend API for [Sparq](https://github.com/demoprojectbdsoft/Sparq-E
 
 ```
 ✅ Business Rules         All prices, discounts, totals computed server-side
-✅ Authorization          JWT verification, role guards, ownership checks
+✅ Authorization          Session/JWT verification, role guards, ownership checks
 ✅ Data Integrity         Transactional operations (orders, points, stock)
-✅ Scheduled Jobs         Daily cron: demo restore, warranty expiry, subscriptions
-✅ Email Delivery         SMTP emails for orders, warranties, password resets
+✅ Scheduled Jobs         Demo restore, delivery offers, vendor periods, placements
+✅ Email Delivery         SMTP emails for orders and password resets
+✅ Document Storage       Applicant uploads, kept behind a signed link
 ```
 
 ### What This API Does NOT Own
@@ -94,8 +97,9 @@ modules/
 ├── order/                       Order processing
 ├── user/                        User management
 ├── vendor/                      Multi-vendor marketplace
-├── warranty/                    Warranty system
-└── ...                          23 more modules
+├── delivery/                    Riders, jobs, GPS tracking
+├── coupon/                      Discount codes
+└── ...                          the remaining modules
 ```
 
 ### Middleware Pipeline
@@ -144,39 +148,42 @@ GET  /api               🌐  Server status
 GET  /                  🌐  Root health check
 ```
 
-#### Categories & Products
+#### Categories, Subcategories & Products
 
 ```
-GET    /api/categories              🌐  List categories
-POST   /api/categories              👑  Create category
-PATCH  /api/categories/:id          👑  Update category
-DELETE /api/categories/:id          👑  Delete category (cascades)
+GET    /api/categories                 🌐  List categories
+POST   /api/categories                 👑  Create category
+PATCH  /api/categories/:id             👑  Update category
+DELETE /api/categories/:id             👑  Delete category
 
-GET    /api/subcategories           🌐  List subcategories
-POST   /api/subcategories           👑  Create subcategory
-PATCH  /api/subcategories/:id       👑  Update subcategory
-DELETE /api/subcategories/:id       👑  Delete subcategory
+GET    /api/subcategories              🌐  List subcategories
+POST   /api/subcategories              👑  Create subcategory
+PATCH  /api/subcategories/:id          👑  Update subcategory
+DELETE /api/subcategories/:id          👑  Delete subcategory
 
-GET    /api/products                🌐  Search & filter products
-GET    /api/products/:slug          🌐  Get single product
-POST   /api/products                👑  Create product
-PATCH  /api/products/:id            👑  Update product
-DELETE /api/products/:id            👑  Delete product
+GET    /api/products                   🌐  Search & filter products
+GET    /api/products/:slug             🌐  Get one product
+POST   /api/products                   👑  Create product
+PATCH  /api/products/:id               👑  Update product
+PATCH  /api/products/:id/review        👑  Approve or reject a seller listing
+PATCH  /api/products/:id/archive       👑  Archive product
+PATCH  /api/products/:id/unarchive     👑  Restore archived product
+DELETE /api/products/:id               👑  Delete product
+GET    /api/products/expire            ⏰  Turn lapsed offers back to full price
+
+GET    /api/engagement/products        👑  Views & favourites report
+POST   /api/engagement/products/:id    🌐  Track a product view
 ```
 
-**Product Query Params:**
-```
-?search=          Search in title, brand, description
-?category=        Filter by category ID
-?subcategory=     Filter by subcategory ID
-?minPrice=        Minimum price filter
-?maxPrice=        Maximum price filter
-?hasOffer=true    Only products with discounts
-?storeSlug=       Filter by vendor store
-?sort=            newest | price-asc | price-desc | rating | popular
-?page=1           Page number
-?limit=12         Items per page
-```
+**Product query params:** `search`, `category`/`categoryId`,
+`subCategory`/`subCategoryId`, `storeSlug`/`storeId`, `minPrice`, `maxPrice`,
+`minDiscount`, `maxDiscount`, `discount` (`0-20` band), `isFeatured`, `inStock`,
+`hasOffer`, `minRating`, `vendorStatus` (admin desk only), `mode=admin`,
+`page`, `limit`.
+
+**Search** matches title, description and SKU.
+**Sort keys:** `newest`, `oldest`, `price_asc`, `price_desc`, `rating`,
+`sellCount`, `featured`.
 
 #### Shopping Cart & Wishlist
 
@@ -210,44 +217,44 @@ GET    /api/transactions            🔐  List payment records
 **Place Order Body:**
 ```json
 {
-  "items": [
-    { "productId": "...", "quantity": 2 }
-  ],
+  "items": [{ "productId": "...", "quantity": 2 }],
   "shippingAddress": {
     "fullName": "John Doe",
-    "phone": "+1234567890",
+    "phone": "+8801712345678",
     "address": "123 Main St",
-    "city": "New York",
-    "postalCode": "10001"
+    "city": "Dhaka",
+    "postalCode": "1000"
   },
   "paymentMethod": "cod",
   "transactionId": "TXN123",
-  "useRewardPoints": true,
+  "pointsToRedeem": 100,
   "couponCode": "SAVE10",
   "shippingMethod": "standard"
 }
 ```
 
+`paymentMethod` is `cod | bkash | rocket | nagad`; `transactionId` is required for
+anything except cash on delivery. `shippingMethod` is `free | standard | express`,
+and a `free` request is re-checked on the server against the live free-shipping
+threshold rather than trusted.
+
 #### Reviews
 
 ```
 GET    /api/reviews                 🌐  List reviews (filterable)
-POST   /api/reviews                 🔐  Create review
-PATCH  /api/reviews/:id             🔐  Update own review
-DELETE /api/reviews/:id             🔐  Delete review (owner or admin)
+GET    /api/reviews/vendor          Vendor  Reviews on the seller's own listings
+POST   /api/reviews                 🔐  Create review (needs a delivered order)
+PATCH  /api/reviews/:id             🔐  Edit own review
+DELETE /api/reviews/:id             🔐  Delete (reviewer, product seller or admin)
 ```
 
 #### Warranties
 
-```
-GET    /api/warranties/mine         🔐  List own warranties
-POST   /api/warranties/claim/:id    🔐  File warranty claim
-GET    /api/warranties              👑  List all warranties (admin)
-PATCH  /api/warranties/claim/:id    👑  Update claim status
-POST   /api/warranties/extend/:id   👑  Extend coverage
-POST   /api/warranties/email/:id    👑  Email customer
-GET    /api/warranties/expire       ⏰  Daily cleanup job
-```
+Warranty is **product vocabulary only** in this build — there is no claim
+workflow or warranty API yet. A product carries `warrantyType`
+(`manufacturer-warranty`, `seller-warranty`, `extended-warranty`, `other`,
+`none`), `warrantyPeriodMonths` and `warrantyTerms`, and the product page renders
+them. The same list is mirrored in the storefront at `sparq/src/lib/warranty.ts`.
 
 #### Users & Addresses
 
@@ -339,6 +346,86 @@ DELETE /api/vendor-promotions/:id            Vendor  End placement early
 GET    /api/vendor-analytics?range=7|30|90|365  Vendor  Sales report
 ```
 
+#### Delivery & Riders
+
+```
+# Store team
+GET    /api/deliveries/admin/order/:orderId  👑  Jobs for one order
+GET    /api/deliveries/admin/overview        👑  Delivery board summary
+GET    /api/deliveries/admin/riders          👑  Riders available to assign
+GET    /api/deliveries/admin/payouts         👑  What each rider was paid
+GET    /api/deliveries/admin                 👑  All deliveries
+POST   /api/deliveries                       👑  Offer an order to a rider
+PATCH  /api/deliveries/:id/reassign          👑  Hand a job to another rider
+PATCH  /api/deliveries/:id/cancel            👑  Stop a job
+GET    /api/deliveries/expire                ⏰  Close offers nobody answered
+
+# Customer tracking
+GET    /api/deliveries/tracking/:orderId       🔐  Live tracking + ETA
+GET    /api/deliveries/tracking/:orderId/code  🔐  Read the door code
+POST   /api/deliveries/tracking/:orderId/code  🔐  Regenerate the door code
+
+# Rider (role: rider)
+GET    /api/deliveries              Rider  Own jobs
+GET    /api/deliveries/stats        Rider  Own figures
+GET    /api/deliveries/:id          Rider  One job and the order behind it
+GET    /api/deliveries/:id/invoice  Rider  Invoice for one job
+POST   /api/deliveries/:id/accept   Rider  Accept an offer
+POST   /api/deliveries/:id/decline  Rider  Decline an offer with a reason
+PATCH  /api/deliveries/:id/status   Rider  picked_up → out_for_delivery
+POST   /api/deliveries/:id/complete Rider  Close the job with the door code
+POST   /api/deliveries/:id/location Rider  Share one position ping
+```
+
+#### Rider Applications
+
+```
+POST   /api/rider-applications             🔐  Submit or resubmit application
+GET    /api/rider-applications/mine        🔐  Own application
+PATCH  /api/rider-applications/mine        🔐  Update own file
+POST   /api/rider-applications/mine/cancel 🔐  Withdraw application
+GET    /api/rider-applications             👑  List all (admin)
+GET    /api/rider-applications/:id         👑  One application
+PATCH  /api/rider-applications/:id/review  👑  Approve or reject
+POST   /api/rider-applications/status      🔑  Status lookup after login
+```
+
+#### Vendor Plans, Desk & Board
+
+```
+GET    /api/vendor-plans           🌐  Price list
+POST   /api/vendor-plans           👑  Create plan
+PATCH  /api/vendor-plans/:planId   👑  Update plan
+DELETE /api/vendor-plans/:planId   👑  Remove plan
+
+GET    /api/vendor-desk            👑  Seller money board
+GET    /api/vendor-admin           👑  Seller board (every shop)
+GET    /api/vendor-admin/:id       👑  One seller's board
+GET    /api/transactions/vendor    Vendor  Own payment rows
+```
+
+#### Slides & Promos
+
+```
+GET    /api/slides      🌐  List hero slides
+POST   /api/slides      👑  Create slide
+PATCH  /api/slides/:id  👑  Update slide
+DELETE /api/slides/:id  👑  Delete slide
+
+GET    /api/promos      🌐  List promo banners
+POST   /api/promos      👑  Create promo
+PATCH  /api/promos/:id  👑  Update promo
+DELETE /api/promos/:id  👑  Delete promo
+```
+
+#### Files
+
+```
+POST   /api/files            🔑  Upload a document (frontend only)
+GET    /api/files/:id/:name  🔐  Read one (signed link, or a staff token)
+GET    /api/files/:id        🔐  Same, without the filename
+```
+
 #### Site Settings & Support
 
 ```
@@ -387,13 +474,14 @@ User Account
 
 ```
 Place Order (Atomic Transaction)
-  1. Validate stock
-  2. Redeem points (atomic: findOneAndUpdate with $gte check)
-  3. Calculate totals (server-side, never trust client)
-  4. Create order + transaction
-  5. Decrement stock
-  6. Clear cart
-  7. Split into vendor groups (if multi-vendor)
+  1. Load products and check stock (only live listings are orderable)
+  2. Price the coupon from the database
+  3. Redeem points (atomic: findOneAndUpdate with $gte check)
+  4. Calculate totals (server-side, never trust client)
+  5. Create order + payment row
+  6. Decrement stock (guarded: $gte, so it never oversells)
+  7. Split into vendor groups, clear the cart
+     — all of the above land together or not at all
 
 Status Flow:
   confirmed → processing → shipped → delivered
@@ -401,17 +489,15 @@ Status Flow:
       └───────────┴──────────┴────► cancelled
 
 On Delivery:
-  • Mark payments successful
-  • Credit loyalty points
+  • Mark the payment successful (cash on delivery settles here)
+  • Credit loyalty points and re-check the tier
   • Update sell counts
-  • Issue warranties
 
 On Cancellation:
-  • Mark payments failed
-  • Restore stock
-  • Refund points spent
-  • Revoke points earned (if was delivered)
-  • Void warranties
+  • Fail a payment that never landed; refund one that had gone through
+  • Restore stock (a seller's rejected slice is not given back twice)
+  • Refund points spent; revoke points earned (if it was delivered)
+  • Hand the coupon's use back to the code
 ```
 
 ### Multi-Vendor Order Splitting
@@ -452,34 +538,18 @@ TIERS:      Recalculated on every balance change
             Silver < 1,000 | Gold 1,000 | Platinum 4,000 | Diamond 10,000
 ```
 
-### Warranty System
+### Warranty (vocabulary only)
 
-**5 Types:**
-1. **Manufacturer** - Brand handles (cannot extend)
-2. **Seller** - Platform handles (cannot extend)
-3. **Extended** - Extra coverage (can extend up to 3x)
-4. **Other** - Custom terms (cannot extend)
-5. **None** - No coverage (no record created)
+A product can be sold with one of five warranty codes:
 
-**Issued on Delivery:**
-```javascript
-if (product.warrantyType !== 'none' && product.warrantyPeriodMonths >= 1) {
-  await Warranty.create({
-    warrantyType: product.warrantyType,        // Copied to record
-    warrantyPeriodMonths: product.warrantyPeriodMonths,
-    warrantyTerms: product.warrantyTerms,
-    expiryDate: addMonths(deliveryDate, product.warrantyPeriodMonths)
-  });
-}
+```
+manufacturer-warranty | seller-warranty | extended-warranty | other | none
 ```
 
-**Lifecycle:**  
-`Active → Claim Filed → Under Review → Resolved/Expired`
-
-**Extension (Extended warranties only):**
-- Max 3 extensions per warranty
-- 1-60 months each
-- History tracked with reasons
+The code, the period in months and a free-text terms line live on the product and
+are shown on the product page. There is **no claim, extension or expiry workflow
+in this build** — `src/modules/warranty/` holds only the shared type list, which
+the storefront mirrors in `sparq/src/lib/warranty.ts`.
 
 ### Discount Coupons
 
@@ -529,42 +599,27 @@ const discount = calculateDiscount(eligibleItems, coupon);
 
 ### Security
 
-**JWT Verification:**
-```javascript
-// Every protected request
-const token = req.headers.authorization?.replace('Bearer ', '');
-const jwks = await fetchJWKS(`${CLIENT_URL}/api/auth/jwks`);
-const { payload } = await jwtVerify(token, jwks);
-req.userId = payload.sub;
-```
+**Verifying the caller.** Every protected request resolves the account from the
+`Authorization: Bearer <token>` header. A JWT is verified against the
+storefront's JWKS endpoint; if that fails the token is treated as a session
+token and looked up in the shared `session` collection. An expired session, a
+suspended account and a missing user all end the same way — refused before any
+handler runs.
 
-**Role Authorization:**
-```javascript
-// Middleware checks role on every request
-const user = await User.findById(req.userId).select('roles roleSuspensions');
-if (!user.roles.includes(requiredRole)) {
-  return res.status(403).json({ success: false, message: 'Forbidden' });
-}
-```
+**Roles and ownership.** `requireRole` checks the account's approved `roles`
+array (never the claimed active role), and each service scopes its reads to the
+caller: a customer reaches only their own orders, cart, wishlist and addresses,
+a seller only their own listings and codes, a rider only their own jobs. Admins
+reach everything, and a route that takes an id from the URL still checks
+ownership before it answers.
 
-**Ownership Checks:**
-```javascript
-// Resources scoped to owner
-const order = await Order.findById(orderId);
-if (order.userId !== req.userId && req.userRole !== 'admin') {
-  return res.status(403).json({ success: false, message: 'Not your order' });
-}
-```
+**Prices are never trusted.** A request names products and quantities only. Every
+price, discount, shipping fee, point redemption and total is recomputed from the
+database, so a browser cannot make a 10% coupon worth 50% or force free shipping.
 
-**Server-Side Pricing:**
-```javascript
-// Never trust client prices
-const products = await Product.find({ _id: { $in: itemIds } });
-const subtotal = items.reduce((sum, item) => {
-  const product = products.find(p => p._id.equals(item.productId));
-  return sum + (product.sellingPrice * item.quantity);
-}, 0);
-```
+For the concrete guarantees that back this up — a required cron secret, signed
+document links, guarded stock and coupon writes, suspension and expiry checks —
+see [Security Notes](#security-notes).
 
 ---
 
@@ -575,15 +630,16 @@ const subtotal = items.reduce((sum, item) => {
 | Feature | Status |
 |---------|--------|
 | Core REST API | ✅ Production Ready |
-| JWT Authentication | ✅ JWKS verification |
-| Product Catalog | ✅ Full CRUD + search |
+| Authentication | ✅ JWKS + session token, suspension & expiry checks |
+| Product Catalog | ✅ Full CRUD + search + review desk |
 | Order Processing | ✅ Transactional |
 | **Loyalty Points** | ✅ **Earning, redemption, tiers** |
-| **Multi-Vendor** | ✅ **Complete marketplace** |
-| **Rider Delivery** | ✅ **GPS tracking, assignments** |
+| **Multi-Vendor** | ✅ **Stores, plans, subscriptions, commission** |
+| **Rider Delivery** | ✅ **Assignment, GPS tracking, door code** |
 | Discount Coupons | ✅ Store + vendor codes |
 | Featured Promotions | ✅ Paid placements |
-| Commission System | ✅ Automated splits |
+| Document Uploads | ✅ Internal key on write, signed link on read |
+| Payment Demo | ✅ Wallet flow, refund on cancellation |
 | Email Notifications | ✅ SMTP with templates |
 | Scheduled Jobs | ✅ Daily cron tasks |
 | Demo Admin Mode | ✅ Auto-restore |
@@ -726,37 +782,42 @@ src/
 │
 ├── modules/
 │   ├── user/                  User management
-│   ├── product/               Product catalog
+│   ├── product/               Product catalog + review desk
+│   ├── product-engagement/    Views & favourites
 │   ├── category/              Categories
 │   ├── subcategory/           Subcategories
 │   ├── cart/                  Shopping cart
 │   ├── wishlist/              Wishlist
 │   ├── order/                 Orders
 │   ├── order-status/          Status history
-│   ├── transaction/           Payments
+│   ├── transaction/           Payment records
 │   ├── review/                Reviews
-│   ├── warranty/              Warranties
-│   ├── coupon/                Coupons
 │   ├── address/               Saved addresses
+│   ├── coupon/                Store coupons
 │   ├── slide/                 Hero slider
 │   ├── promo/                 Promo banners
 │   ├── contact/               Contact form
 │   ├── message/               Stored messages
-│   ├── activity/              Notifications
+│   ├── activity/              Notifications & feed
 │   ├── site-settings/         Store config
+│   ├── file/                  Document uploads
 │   ├── demo/                  Demo admin
-│   ├── mail/                  Email internal
-│   ├── delivery/              Delivery tracking
+│   ├── mail/                  Internal email
+│   ├── delivery/              Riders, jobs, tracking
 │   ├── rider/                 Rider applications
+│   ├── warranty/              Warranty type list (no workflow)
 │   └── vendor/                Multi-vendor
 │       ├── vendor-application/
 │       ├── vendor-store/
 │       ├── vendor-product/
 │       ├── vendor-order/
+│       ├── vendor-plan/
 │       ├── vendor-subscription/
 │       ├── vendor-coupon/
 │       ├── vendor-promotion/
-│       └── vendor-analytics/
+│       ├── vendor-analytics/
+│       ├── vendor-desk/
+│       └── vendor-admin/
 │
 └── utils/
     ├── apiError.ts            Error class
