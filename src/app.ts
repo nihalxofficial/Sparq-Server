@@ -43,7 +43,27 @@ import { notFound } from "./middlewares/notFound.middleware";
 
 const app = express();
 
-app.use(cors());
+/**
+ * Cross-origin access.
+ *
+ * The storefront is the only browser client, so CORS is limited to the origins
+ * the deployment names: `CORS_ORIGINS` (comma-separated) or the app's own URL.
+ * Server-to-server calls carry no Origin and are unaffected. With neither set,
+ * no browser origin can be trusted safely, so all are allowed and a warning is
+ * logged rather than silently locking the storefront out.
+ */
+const allowedOrigins = (process.env.CORS_ORIGINS || process.env.NEXT_PUBLIC_CLIENT_URL || "")
+  .split(",")
+  .map((value) => value.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+
+if (allowedOrigins.length === 0) {
+  console.warn(
+    "[cors] Neither CORS_ORIGINS nor NEXT_PUBLIC_CLIENT_URL is set — allowing all origins."
+  );
+}
+
+app.use(cors({ origin: allowedOrigins.length > 0 ? allowedOrigins : true }));
 
 /**
  * Uploaded documents, mounted before the global body parser on purpose.
