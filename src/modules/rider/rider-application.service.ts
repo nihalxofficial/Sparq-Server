@@ -4,6 +4,7 @@ import { ApiError } from "../../utils/apiError";
 import { applySection } from "../../utils/profilePatch";
 import { withTransaction } from "../../utils/transactions";
 import { normalizeRoles } from "../../utils/roles";
+import { escapeRegex } from "../../utils/regex";
 import { User } from "../user/user.model";
 import { RiderApplication } from "./rider-application.model";
 import { PROFILE_SECTIONS } from "./rider-application.validator";
@@ -28,8 +29,6 @@ import type {
 function newReference(): string {
   return `RID-${randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()}`;
 }
-
-const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Loads the account behind an application and refuses the wrong rows. */
 async function loadApplicant(userId: string) {

@@ -5,6 +5,7 @@ import { VendorStore } from "./vendor-store.model";
 import { VendorOrder } from "./vendor-order.model";
 import { VENDOR_LIVE_PRODUCT_STATUSES } from "./vendor.types";
 import type { StoreQuery, UpdateStoreInput, PublicStoreQuery } from "./vendor-store.validator";
+import { escapeRegex } from "../../utils/regex";
 
 /**
  * The vendor's own storefront.
@@ -322,8 +323,6 @@ export async function listPublicStores(query: PublicStoreQuery) {
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
   };
 }
-
-const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * The categories the public directory actually offers: one row per distinct

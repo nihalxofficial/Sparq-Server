@@ -7,6 +7,7 @@ import { endPlacementForProduct } from "../vendor/featured-promotion.service";
 import { Order } from "../order/order.model";
 import { ApiError } from "../../utils/apiError";
 import { idQuery, idVariants } from "../../utils/ids";
+import { escapeRegex } from "../../utils/regex";
 import { Types } from "mongoose";
 import { CreateProductInput, UpdateProductInput, GetProductsQuery } from "./product.validator";
 import type { WarrantyType } from "../warranty/warranty.types";
@@ -45,11 +46,6 @@ const PRICE_SORTS: Record<string, 1 | -1> = {
   price_asc: 1,
   price_desc: -1,
 };
-
-// Escapes regex special chars so user search input matches literally
-function escapeRegex(str: string) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 // Fetches avg rating + review count for a batch of products in ONE query.
 // Returns a Map<productIdString, { avgRating, count }> for fast O(1) lookup.

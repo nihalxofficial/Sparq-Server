@@ -5,6 +5,7 @@ import { getMailIdentity } from "../site-settings/site-settings.service";
 import { sendMail } from "../../utils/mailer";
 import { visitorReplyEmail } from "../../utils/emailTemplates";
 import { recordActivity } from "../activity/activity.service";
+import { escapeRegex } from "../../utils/regex";
 import { GetMessagesQuery, ReplyMessageInput } from "./message.validator";
 
 /** What the contact page collected, before any email is attempted. */
@@ -48,11 +49,6 @@ export async function markSent(id: unknown, inbox: string): Promise<void> {
  */
 export async function markFailed(id: unknown, reason: string): Promise<void> {
   await Message.updateOne({ _id: id }, { status: "failed", error: reason });
-}
-
-/** Escapes regex special characters so the admin's search text matches literally. */
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**

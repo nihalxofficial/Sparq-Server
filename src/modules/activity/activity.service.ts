@@ -3,6 +3,7 @@ import { Activity, STORE_ACTIVITY_TYPES, PERSONAL_ACTIVITY_TYPES } from "./activ
 import { ApiError } from "../../utils/apiError";
 import { GetFeedQuery } from "./activity.validator";
 import { isAdminRole } from "../../utils/roles";
+import { escapeRegex } from "../../utils/regex";
 
 export type StoreActivityType = (typeof STORE_ACTIVITY_TYPES)[number];
 export type PersonalActivityType = (typeof PERSONAL_ACTIVITY_TYPES)[number];
@@ -33,11 +34,6 @@ export interface Requester {
 
 /** Every type a feed can hold, so a chip naming an unknown value is ignored. */
 const KNOWN_TYPES = new Set<string>([...STORE_ACTIVITY_TYPES, ...PERSONAL_ACTIVITY_TYPES]);
-
-/** Escapes a search term, so "a+b" is matched literally instead of as a regex. */
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 /** The known types named in a comma-separated `type`, unknown ones dropped. */
 function parseTypes(type?: string): string[] {

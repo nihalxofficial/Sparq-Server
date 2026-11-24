@@ -4,6 +4,7 @@ import { ApiError } from "../../utils/apiError";
 import { applySection } from "../../utils/profilePatch";
 import { withTransaction } from "../../utils/transactions";
 import { hasWarehouse } from "../../utils/warehouse";
+import { escapeRegex } from "../../utils/regex";
 import { User } from "../user/user.model";
 import { VendorApplication } from "./vendor-application.model";
 import { VendorStore } from "./vendor-store.model";
@@ -47,8 +48,6 @@ export function slugify(value: string): string {
     .replace(/-+/g, "-")
     .slice(0, 60);
 }
-
-const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Refuses a slug or store name somebody else already holds.
