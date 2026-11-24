@@ -2,8 +2,12 @@ import { Schema, model } from "mongoose";
 
 const productReviewSchema = new Schema(
   {
-    productId: { type: Schema.Types.Mixed, ref: "Product", required: true },
-    userId: { type: Schema.Types.Mixed, ref: "User", required: true },
+    // Both ids are ObjectIds: the unique index below is only per-type, so a
+    // `Mixed` field let the same pair be stored once as text and once as an
+    // ObjectId — two rows the index considered different. Old text rows are
+    // normalised by `scripts/dedupe-reviews.ts`.
+    productId: { type: Schema.Types.ObjectId, ref: "Product", required: true },
+    userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     rating: { type: Number, required: true, min: 1, max: 5 },
     comment: { type: String, required: true },
     images: { type: [String], default: [] }, // up to 5 review photo URLs

@@ -106,6 +106,20 @@ async function main() {
 
   console.log(`\nDeleted ${removed} duplicate review(s)`);
 
+  // Old rows stored the two ids as text. The unique index is built on the
+  // ObjectId form the app now writes, so text rows are converted first —
+  // otherwise they would sit outside the index and a fresh duplicate could be
+  // created beside them.
+  for (const field of ["userId", "productId"] as const) {
+    const result = await collection.updateMany(
+      { [field]: { $type: "string" } } as any,
+      [{ $set: { [field]: { $toObjectId: `$${field}` } } }] as any
+    );
+    if (result.modifiedCount) {
+      console.log(`Normalised ${result.modifiedCount} ${field} value(s) to ObjectId`);
+    }
+  }
+
   // Build the index now, so the error stops appearing at the next start.
   try {
     await collection.createIndex({ userId: 1, productId: 1 }, { unique: true });
