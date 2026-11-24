@@ -200,7 +200,7 @@ async function buildOrderItems(items: CreateOrderInput["items"]) {
     });
   }
 
-  return { orderItems, subtotal };
+  return { orderItems, subtotal: Math.round(subtotal * 100) / 100 };
 }
 
 /**
@@ -498,7 +498,10 @@ export async function createOrder(data: CreateOrderInput, userId: string) {
       ? await redeemPoints(userId, subtotal - couponDiscount, pointsRequested, pointsConfig, session)
       : { pointsRedeemed: 0, pointsDiscount: 0 };
 
-    const totalAmount = subtotal - couponDiscount + shipping.fee - redemption.pointsDiscount;
+    // Rounded to the cent: a rate such as 150 points per unit or a percentage
+    // coupon leaves fractions that would otherwise reach the customer's bill.
+    const totalAmount =
+      Math.round((subtotal - couponDiscount + shipping.fee - redemption.pointsDiscount) * 100) / 100;
     // Points are earned on what is really paid for the products, never on the
     // part that a code or the customer's own points covered.
     const pointsEarned = Math.floor(
