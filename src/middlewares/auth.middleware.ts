@@ -15,6 +15,8 @@ type AuthUser = {
   activeRole?: string;
   /** Approved roles the store team parked — reachable by a switch, not a call. */
   suspendedRoles?: string[];
+  /** "active" | "suspended" — a suspended account is refused at the door. */
+  status?: string;
 };
 
 const JWKS = createRemoteJWKSet(new URL(`${ENV.NEXT_PUBLIC_CLIENT_URL}/api/auth/jwks`));
@@ -56,6 +58,11 @@ async function userFromSession(token: string): Promise<AuthUser | null> {
   const session = await db?.collection("session").findOne({ token });
   if (!session) return null;
 
+  // A session row outlives nothing: an expired token must not authenticate,
+  // or a leaked or long-abandoned session would work forever.
+  const expiresAt = session.expiresAt ? new Date(session.expiresAt).getTime() : 0;
+  if (!expiresAt || expiresAt <= Date.now()) return null;
+
   const rawUserId = session.userId;
   const objectId = mongoose.Types.ObjectId.isValid(String(rawUserId))
     ? new mongoose.Types.ObjectId(String(rawUserId))
@@ -93,6 +100,7 @@ function shapeFromRecord(base: AuthUser, record: any): AuthUser {
     activeRole,
     roles,
     suspendedRoles,
+    status: typeof record?.status === "string" ? record.status : undefined,
   };
 }
 
@@ -156,6 +164,13 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     return next(new ApiError(401, "Invalid or expired token"));
   }
 
+  // A suspended account is refused at the API, not only in the interface: a
+  // request can always be replayed, so the store team's suspension is enforced
+  // here for every endpoint behind this middleware.
+  if (user.status === "suspended") {
+    return next(new ApiError(403, "This account is suspended. Contact support."));
+  }
+
   req.user = user;
 
   if (isDemoAdmin(user.email, user.role)) {
@@ -186,7 +201,8 @@ export async function attachUser(req: Request, _res: Response, next: NextFunctio
     }
 
     if (user && resolvedFromJwt) user = await withCurrentRole(user);
-    if (user) req.user = user;
+    // A suspended account reads a public route as a guest, never as staff.
+    if (user && user.status !== "suspended") req.user = user;
   } catch {
     // A token this route cannot verify is the same as no token at all.
   }
