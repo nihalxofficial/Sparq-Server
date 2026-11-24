@@ -1,20 +1,9 @@
 import { Schema, model, type Types } from "mongoose";
 
 /**
- * One uploaded file, held in the store's own database.
- *
- * Documents had been going to a free image host, which works for a photograph
- * of a licence and not at all for a PDF, a scanned certificate or a Word file —
- * the reviewer got a broken thumbnail and the applicant got no way forward. So
- * the bytes are kept here instead: an application's papers now live wherever
- * the application lives, and the review screen can open them without a third
- * party being up.
- *
- * The binary sits in the document itself. These are things like a driving
- * licence photographed in a kitchen — a few hundred kilobytes — and keeping the
- * bytes beside the row means one read, no second service to configure, and no
- * credentials to lose. Anything larger belongs in object storage, and the size
- * cap in `file.types` makes sure it cannot quietly become that.
+ * One uploaded file, held in the store's own database. Documents go here rather
+ * than a third-party host, so a PDF or a scan opens without another service
+ * being up. The bytes sit beside the row; the cap in `file.types` keeps it small.
  */
 const storedFileSchema = new Schema(
   {

@@ -92,20 +92,9 @@ export function hasAnyRole(
 }
 
 /**
- * Whether the caller may shop right now, given every role they hold.
- *
- * Two conditions must both be true: the account carries the `customer` entry
- * in its approved array, AND it is currently sitting on the customer dashboard
- * (`activeRole`, mirrored into `role`, is "customer"). A rider or a vendor who
- * also bought the customer entry is refused while they are in their rider /
- * vendor workspace — they must switch to the customer role first. An admin or
- * demo admin never qualifies, because their array has no `customer` to switch
- * into.
- *
- * `activeRole` defaults to the legacy `role` string, which the model already
- * keeps mirrored to `activeRole`. For a pre-migration row with no array at all
- * the single-role fallback still decides, so a legacy customer keeps shopping
- * and a legacy rider stays out of the cart.
+ * Whether the caller may shop: they must hold the `customer` entry AND be
+ * sitting on the customer dashboard — a rider or vendor who also bought the
+ * customer entry must switch to it first, and an admin never qualifies.
  */
 export function canShopWithRoles(
   roles: unknown,

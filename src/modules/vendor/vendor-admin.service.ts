@@ -13,18 +13,10 @@ import { listPlans } from "./vendor-plan.service";
 import type { BillingCycle } from "./vendor.types";
 
 /**
- * The store team's board of sellers.
- *
- * Every row here is one seller account with a shop, and every number on it is
- * read from the table that owns it: the plan money from the payment rows, the
- * plan time from the period rows, the trade from the vendor's own order groups
- * and the delivery record from how those groups ended. Nothing is stored twice,
- * so a row cannot drift from the desk it came from.
- *
- * The board computes its figures for the whole book before it pages, because
- * the order the desk sorts by — a score, a rate — is itself a computation. The
- * marketplace has a few dozen shops, not a few thousand, so one pass is cheaper
- * than a denormalised column nobody would remember to update.
+ * The store team's board of sellers. Every figure is read from the table that
+ * owns it (plan money from payments, plan time from periods, trade and delivery
+ * from the seller's order groups) and computed for the whole book before it
+ * pages, because the sort key is itself a computation.
  */
 
 /** Orders that never became a sale are excluded from every money figure. */
@@ -44,18 +36,10 @@ export interface VendorBoardQuery {
 }
 
 /**
- * The standing the desk sorts by.
- *
- * Four readings, one number, so a shop is never ranked on money alone:
- *
- *   - what it paid for its plans, one point per hundred taka,
- *   - how long it has been paying, one point per thirty days bought,
- *   - what it has sold (one point per thousand taka of orders it did not lose),
- *   - and its delivery record, which contributes its own percentage as points.
- *
- * The split is returned with the total, because a desk deciding whether to
- * grant a placement should be able to see whether a shop earned its points at
- * the till or on the road.
+ * The standing the desk sorts by — one number from four readings, so a shop is
+ * never ranked on money alone: plan money paid, time paid for, sales it did not
+ * lose, and its delivery record. The split comes back too, so a desk can see
+ * whether the points were earned at the till or on the road.
  */
 export interface VendorPoints {
   subscription: number;
