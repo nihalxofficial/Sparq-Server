@@ -532,14 +532,31 @@ export async function createOrder(data: CreateOrderInput, userId: string) {
     await createVendorOrdersForOrder(order, session);
 
     for (const item of data.items) {
-      // A product saved with no stock quantity is not stock-tracked, so it has
-      // no number to lower. The filter skips those rows; without it `$inc`
-      // would write NaN into the field.
-      await Product.updateOne(
-        { _id: item.productId, stockQuantity: { $ne: null } },
+      // The decrement carries its own stock guard, so two orders cannot both
+      // take the last unit: a tracked row is only lowered while it still holds
+      // the requested quantity. `$gte` never matches a null count, which is how
+      // an untracked product is skipped rather than written as NaN.
+      const outcome = await Product.updateOne(
+        { _id: item.productId, stockQuantity: { $gte: item.quantity } },
         { $inc: { stockQuantity: -item.quantity } },
         { session }
       );
+
+      if (outcome.modifiedCount === 0) {
+        // Nothing was lowered: either the product has no count to lower, or
+        // another order took the units first. Only the tracked case is an error.
+        const current = await Product.findById(item.productId)
+          .select("stockQuantity title")
+          .session(session ?? null)
+          .lean();
+
+        if (current && current.stockQuantity != null) {
+          throw new ApiError(
+            400,
+            `Only ${current.stockQuantity} unit(s) of ${current.title} left in stock`
+          );
+        }
+      }
     }
     await Cart.deleteMany({ userId }, { session });
 

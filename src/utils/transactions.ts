@@ -19,6 +19,15 @@ async function transactionsSupported(): Promise<boolean> {
     supported = false;
   }
 
+  // Said once, because the answer is cached: a standalone mongod cannot roll a
+  // multi-step order back, so every checkout is best-effort rather than atomic.
+  if (!supported) {
+    console.warn(
+      "[db] Transactions are unavailable (standalone mongod): multi-step writes " +
+        "run without rollback. Use a replica set in production."
+    );
+  }
+
   return supported;
 }
 
