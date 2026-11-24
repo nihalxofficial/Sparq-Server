@@ -50,6 +50,10 @@ async function startServer() {
 
   const timezone = process.env.CRON_TIMEZONE || "Asia/Dhaka";
 
+  // On Vercel the schedules in `vercel.json` run these sweeps, so the
+  // in-process cron would only fire them a second time. It is armed on a
+  // long-running host, and left off where the platform's own cron is used.
+  if (!process.env.VERCEL) {
   // Schedule daily restore of demo admin changes at 12:00 AM (midnight local time)
   cron.schedule(
     "0 0 * * *",
@@ -117,6 +121,7 @@ async function startServer() {
     },
     { timezone }
   );
+  }
 
   app.listen(ENV.PORT, () => {
     console.log(`Server running on port ${ENV.PORT}`);
