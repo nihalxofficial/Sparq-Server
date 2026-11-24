@@ -120,35 +120,24 @@ export async function getLiveSubscription(vendorId: string) {
     const cutoff = row.status === "grace" ? row.graceEndsAt : row.endDate;
     if (cutoff && cutoff.getTime() > now.getTime()) return row;
 
-    // The period is over: close it and keep going down the list.
-    if (row.status === "grace") {
-      row.status = "expired";
-      row.history.push({ action: "expired", at: now, note: "Grace period ended" });
-    } else {
+    /*
+     * The period is over. Whether it slides into grace is projected in memory
+     * for this read only — the row is not written and no placement is dimmed
+     * here. A read that has side effects is a read two callers can duplicate;
+     * the daily sweep is what writes the change down and ends the promotions.
+     */
+    if (row.status !== "grace") {
       const graceDays = await graceDaysFor(row.plan);
       if (graceDays > 0) {
-        row.status = "grace";
-        row.graceEndsAt = addDays(row.endDate, graceDays);
-        row.history.push({
-          action: "grace",
-          at: now,
-          note: `${graceDays}-day grace period started`,
-        });
-        await row.save();
-        if (row.graceEndsAt.getTime() > now.getTime()) return row;
-        row.status = "expired";
-      } else {
-        row.status = "expired";
-        row.history.push({ action: "expired", at: now, note: "Subscription ended" });
+        const graceEndsAt = addDays(row.endDate, graceDays);
+        if (graceEndsAt.getTime() > now.getTime()) {
+          row.status = "grace";
+          row.graceEndsAt = graceEndsAt;
+          return row;
+        }
       }
     }
-    await row.save();
-
-    // The plan that paid for the featured shelves has ended with this row, so
-    // nothing it bought stays lit while the daily sweep is still on its way.
-    if (row.status === "expired") {
-      await endPromotionsForVendor(String(row.vendorId), "Subscription ended");
-    }
+    // Otherwise the period is finished: keep looking at the older rows.
   }
 
   return null;
