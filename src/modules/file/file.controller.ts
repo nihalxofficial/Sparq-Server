@@ -3,6 +3,7 @@ import { apiResponse } from "../../utils/apiResponse";
 import { ApiError } from "../../utils/apiError";
 import * as fileService from "./file.service";
 import { uploadFileSchema } from "./file.validator";
+import { fileSignature } from "./file.access";
 import {
   describeSizeLimit,
   isAllowedFileType,
@@ -52,7 +53,10 @@ export const uploadFile = catchAsync(async (req, res, next) => {
   });
 
   const origin = `${req.protocol}://${req.get("host")}`;
-  const url = `${origin}/api/files/${stored.id}/${encodeURIComponent(stored.name)}`;
+  const signature = fileSignature(stored.id);
+  const url = `${origin}/api/files/${stored.id}/${encodeURIComponent(stored.name)}${
+    signature ? `?sig=${signature}` : ""
+  }`;
 
   return apiResponse(
     res,
@@ -65,11 +69,10 @@ export const uploadFile = catchAsync(async (req, res, next) => {
 /**
  * Serves one stored document.
  *
- * Open to anyone holding the link, on purpose: an image in a review screen and a
- * PDF in the browser's viewer are plain GETs that carry no token, and an admin
- * sharing a link with a colleague is a normal thing to do. The id is a random
- * object id, so the link is not guessable, and nothing else about the applicant
- * is exposed by it.
+ * The route is behind `requireFileAccess`, so only a request carrying the
+ * signed link the upload handed out, or a store-team token, reaches here. The
+ * bytes are still cached privately, because the URL that names them is the
+ * capability that opens them.
  */
 export const getFile = catchAsync(async (req, res, next) => {
   // Express types a route parameter as string or string[]; the id is always one
@@ -89,8 +92,9 @@ export const getFile = catchAsync(async (req, res, next) => {
 
   res.setHeader("Content-Type", file.mime);
   res.setHeader("Content-Length", String(file.data.length));
-  // The bytes never change under an id, so a browser may keep them.
-  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  // The bytes never change under an id, and only a caller holding the signed
+  // link or a staff token reaches this line, so the copy stays private.
+  res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
   // Never let the browser second-guess the declared type: a document is a
   // document, whatever is inside it.
   res.setHeader("X-Content-Type-Options", "nosniff");
