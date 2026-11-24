@@ -607,6 +607,33 @@ const subtotal = items.reduce((sum, item) => {
 
 ---
 
+## Demo Admin Mode
+
+A demo admin (`DEMO_ADMIN_EMAIL`) has the same access as a real admin, but every
+write it makes is recorded in a `demo_undo` log and reverted by the nightly
+sweep — not after a rolling 24 hours, but once a day at 00:00 Asia/Dhaka
+(`0 18 * * *` UTC on Vercel). Only the demo admin's own writes are logged; a real
+admin's changes are never touched.
+
+**What the restore does**
+
+1. Created rows (`before: null`) are deleted — **unless something real still
+   references them**. If a real product sits in a demo-created category, a cart
+   holds a demo-created product, or an order points at a demo-created row, that
+   row is kept and the sweep logs it (`kept`), so a reference is never left
+   pointing at nothing.
+2. Edited or deleted rows are put back from the snapshot, so a real row the demo
+   admin changed returns to its original state.
+
+The reference check scans the app's collections for any field (`userId`,
+`categoryId`, `productId`, `orderId`, `storeId`, … and their array forms) equal
+to the row's id. Ids are globally unique, so a match is always a genuine
+dependency. A reference field the check does not know about fails safe: the row
+is kept rather than orphaned. Each run reports `removed`, `restored` and `kept`
+per collection.
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
