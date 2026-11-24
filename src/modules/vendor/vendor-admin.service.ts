@@ -226,13 +226,18 @@ async function readLedgers() {
   return { trade, money: moneyByVendor, coupons: couponsByVendor, periods: periods as any[] };
 }
 
-/** The period a seller stands on right now, if any. */
-function livePeriod(periods: any[], vendorId: string) {
+/** The period a seller stands on right now, if any: held and not yet lapsed. */
+function livePeriod(periods: any[], vendorId: string, now: Date) {
   return (
-    periods.find(
-      (row) =>
-        idOf(row.vendorId) === vendorId && ["active", "grace"].includes(String(row.status))
-    ) ?? null
+    periods.find((row) => {
+      if (idOf(row.vendorId) !== vendorId) return false;
+      const status = String(row.status);
+      if (status !== "active" && status !== "grace") return false;
+      // A row the sweep has not closed yet still ends on its own clock, so the
+      // board reads the same answer the vendor's own dashboard does.
+      const cutoff = status === "grace" ? row.graceEndsAt : row.endDate;
+      return cutoff ? new Date(cutoff).getTime() > now.getTime() : false;
+    }) ?? null
   );
 }
 
@@ -286,7 +291,7 @@ export async function listVendorBoard(query: VendorBoardQuery) {
     const trade = ledgers.trade.get(id) ?? { orders: 0, sales: 0, delivered: 0, stopped: 0, successRate: 0 };
     const paid = ledgers.money.get(id) ?? { revenue: 0, periods: 0, paidDays: 0 };
     const couponBook = ledgers.coupons.get(id) ?? { coupons: 0, active: 0, discountGiven: 0 };
-    const live = livePeriod(ledgers.periods, id);
+    const live = livePeriod(ledgers.periods, id, now);
 
     const featuredUntil = store.featuredUntil ? new Date(store.featuredUntil) : null;
     const isFeatured = Boolean(store.isFeatured && (!featuredUntil || featuredUntil > now));
@@ -436,7 +441,7 @@ export async function getVendorBoardDetail(id: string) {
   ]);
 
   const planName = new Map(plans.map((plan) => [plan.id, plan.name]));
-  const live = livePeriod(periods as any[], vendorId);
+  const live = livePeriod(periods as any[], vendorId, now);
   const featuredUntil = store.featuredUntil ? new Date(store.featuredUntil) : null;
   const isFeatured = Boolean(store.isFeatured && (!featuredUntil || featuredUntil > now));
 
