@@ -1414,18 +1414,9 @@ function payoutWindow(range: string): { from: Date | null; format: string } {
 }
 
 /**
- * The store's payout record.
- *
- * One row per job that paid a rider, which is one row per delivered delivery:
- * the fee is booked the moment the hand-over is confirmed, by the rider's code
- * or by the customer's own answer, so a delivered job always has a payout and a
- * job that never reached the door never does. Nothing is paid out later by hand,
- * so this list cannot fall behind the rider's own earnings screen and the two
- * always add up to the same money.
- *
- * Every number is folded in the database, not in a loop over every row: a store
- * with years of deliveries would otherwise pull its whole history into memory to
- * draw one chart. The record table is the only part that is paged.
+ * The store's payout record: one row per delivered job, booked the moment the
+ * hand-over is confirmed, so the list always matches the rider's own earnings.
+ * Every figure is folded in the database, and only the record table is paged.
  */
 export async function getAdminPayouts(query: AdminPayoutsQuery) {
   return payoutReport(query);

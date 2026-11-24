@@ -197,23 +197,11 @@ export async function getMyApplication(userId: string) {
 }
 
 /**
- * The rider's own edit of their file.
- *
- * The profile page is the rider's copy of everything the application wizard
- * collected, so an approved rider keeps editing it — a new plate, a renewed
- * licence, a better photo — without reopening the review. Two things happen in
- * one call: the application row keeps the record, and the identity and vehicle
- * fields are mirrored onto the account, because the rider dashboard, the
- * delivery job and the customer's tracking screen have always read them from
- * the user row.
- *
- * The service does not know which fields the form considers finished, so it
- * accepts a half-empty save. The application itself stays where it was: this
- * path never changes a status or reopens a decision.
- *
- * A rider whose account was handed the role without a wizard run has no file at
- * all. The profile page is then the only place those answers can live, so the
- * row is opened here rather than sent to a dead end.
+ * The rider's own edit of their file. One call updates the application record
+ * and mirrors the identity and vehicle fields onto the account, since the
+ * dashboard, the delivery job and the tracking screen read them from the user
+ * row. It accepts a half-empty save and never changes a status; a rider handed
+ * the role with no file gets one opened here.
  */
 export async function updateMyApplication(
   userId: string,

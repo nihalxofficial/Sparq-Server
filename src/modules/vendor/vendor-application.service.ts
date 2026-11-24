@@ -255,25 +255,11 @@ export async function getMyApplication(userId: string) {
 }
 
 /**
- * The seller's own edit of their file.
- *
- * The vendor profile page shows the whole application — who applied, how the
- * shop presents itself, where the business sits, what was uploaded for
- * verification — filled or not, and lets it be corrected. One Save therefore
- * writes three places at once, because they are one answer kept in three rows:
- *
- * - the application row keeps the record the review desk read,
- * - the store row is what buyers actually see, so the storefront fields are
- *   copied onto it,
- * - the account keeps its display name and phone.
- *
- * What is deliberately not editable here: the slug, because every published link
- * to the shop is built from it, and the plan and billing cycle, because a plan
- * is a paid change and the subscription desk is the only place that may take
- * money for one. A closed shop stays closed — its owner fixing a phone number
- * must not quietly rewrite a storefront the store team switched off.
- *
- * The status never moves on this path: an edit is not a resubmission.
+ * The seller's own edit of their file. One Save writes three rows — the
+ * application record, the storefront buyers see, and the account's name and
+ * phone — because they are one answer. The slug and the plan stay out (a
+ * published link and a paid change are not this desk's to move), and the status
+ * never moves here: an edit is not a resubmission.
  */
 export async function updateMyApplication(userId: string, input: UpdateMyApplicationInput) {
   const application: any = await VendorApplication.findOne({ userId }).sort({ createdAt: -1 });
