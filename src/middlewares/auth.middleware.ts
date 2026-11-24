@@ -29,9 +29,13 @@ declare global {
   }
 }
 
-/** Reads the bearer token from the Authorization header or a `?token=` param. */
+/** Reads the bearer token from the Authorization header. */
 function readToken(req: Request): string | undefined {
-  return req.headers.authorization?.split(" ")[1] || (req.query.token as string | undefined);
+  const header = req.headers.authorization;
+  if (!header) return undefined;
+  const [scheme, token] = header.split(" ");
+  if (!token || scheme?.toLowerCase() !== "bearer") return undefined;
+  return token;
 }
 
 /** Verifies a Better-Auth JWT against the frontend's JWKS endpoint. */
