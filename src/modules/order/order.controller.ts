@@ -1,12 +1,14 @@
 import { catchAsync } from "../../utils/catchAsync";
 import { apiResponse } from "../../utils/apiResponse";
 import { parseQuery } from "../../utils/validate";
-import { assertOwnerOrAdmin, currentUserId, scopedUserId } from "../../utils/authz";
+import { assertOwnerOrAdmin, assertShopper, currentUserId, scopedUserId } from "../../utils/authz";
 import * as orderService from "./order.service";
 import { getOrdersQuerySchema } from "./order.validator";
 
 export const createOrder = catchAsync(async (req, res) => {
-  // The buyer is always the caller — the body cannot name somebody else.
+  // The buyer is always the caller — the body cannot name somebody else. The
+  // shopper rule is checked here too, so a staff or seller token cannot order.
+  assertShopper(req.user, "place an order");
   const order = await orderService.createOrder(req.body, currentUserId(req.user));
   apiResponse(res, 201, order, "Order placed successfully");
 });

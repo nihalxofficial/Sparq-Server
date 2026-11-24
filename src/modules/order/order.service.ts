@@ -25,6 +25,7 @@ import {
 import { isLapsedOffer } from "../delivery/delivery.flow";
 import { createVendorOrdersForOrder, syncVendorOrdersForParentStatus } from "../vendor/vendor-order.create";
 import { VendorOrder, type VendorOrderStatus } from "../vendor/vendor-order.model";
+import { isLiveVendorProductStatus } from "../vendor/vendor.types";
 import {
   evaluateCoupon,
   loadCouponLines,
@@ -165,6 +166,18 @@ async function buildOrderItems(items: CreateOrderInput["items"]) {
   for (const item of items) {
     const product = await Product.findById(item.productId);
     if (!product) throw new ApiError(404, `Product not found: ${item.productId}`);
+
+    // Only a live listing can be bought: a draft, a submission waiting for
+    // review, a rejected or archived row is refused even when its id is posted
+    // directly. Platform stock carries no vendor status and is live by design.
+    const vendorStatus = (product as any).vendorProductStatus;
+    if (
+      product.isVisible === false ||
+      (vendorStatus != null && !isLiveVendorProductStatus(vendorStatus))
+    ) {
+      throw new ApiError(404, `Product not found: ${item.productId}`);
+    }
+
     if (product.stockQuantity != null && product.stockQuantity < item.quantity) {
       throw new ApiError(400, `Insufficient stock for ${product.title}`);
     }
@@ -247,7 +260,20 @@ async function applyCancellation(
   // cancellation back instead of leaving a half-refunded order behind.
   const wasDelivered = previousStatus === "delivered";
 
+  // A seller who rejected their slice returned those units the moment they
+  // rejected it, so their lines must not be given back a second time here.
+  const rejectedVendors = new Set(
+    (
+      await VendorOrder.find({ orderId, status: "rejected" })
+        .select("vendorId")
+        .session(session ?? null)
+        .lean()
+    ).map((row: any) => String(row.vendorId))
+  );
+
   for (const item of order.items || []) {
+    if (item.vendorId && rejectedVendors.has(String(item.vendorId))) continue;
+
     const productId = orderItemProductId(item);
     if (!productId || !item.quantity) continue;
 
