@@ -258,6 +258,27 @@ export async function startSubscription(input: StartSubscriptionInput) {
   const subscription = await withTransaction(async (session) => {
     const now = new Date();
 
+    // A renewal stacks on top of the time already paid for, so buying early
+    // never throws away the days left on the running period. Anything else — a
+    // first activation, an upgrade or a downgrade — starts a fresh period now.
+    let startDate = now;
+    if (input.purpose === "renewal") {
+      const current: any = await VendorSubscription.findOne({
+        vendorId: input.vendorId,
+        status: { $in: ["active", "grace"] },
+      })
+        .sort({ endDate: -1 })
+        .session(session ?? null)
+        .lean();
+
+      const currentEnd =
+        current?.status === "grace" ? current.graceEndsAt ?? current.endDate : current?.endDate ?? null;
+
+      if (currentEnd && new Date(currentEnd).getTime() > now.getTime()) {
+        startDate = new Date(currentEnd);
+      }
+    }
+
     // Close whatever is live, keeping it as history.
     await VendorSubscription.updateMany(
       { vendorId: input.vendorId, status: { $in: ["active", "grace"] } },
@@ -281,8 +302,8 @@ export async function startSubscription(input: StartSubscriptionInput) {
       billingCycle: input.billingCycle,
       status: "active",
       pricePaid: price,
-      startDate: now,
-      endDate: addDays(now, days),
+      startDate,
+      endDate: addDays(startDate, days),
       autoRenew: false,
       note: input.note || "",
       history: [
