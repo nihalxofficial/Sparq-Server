@@ -5,7 +5,7 @@ import { getMailIdentity } from "../site-settings/site-settings.service";
 import { sendMail } from "../../utils/mailer";
 import { visitorReplyEmail } from "../../utils/emailTemplates";
 import { recordActivity } from "../activity/activity.service";
-import { escapeRegex } from "../../utils/regex";
+import { paginate, sortBy, searchOr, where } from "../../utils/query";
 import { GetMessagesQuery, ReplyMessageInput } from "./message.validator";
 
 /** What the contact page collected, before any email is attempted. */
@@ -66,27 +66,23 @@ const SORT_ORDERS: Record<string, Record<string, 1 | -1>> = {
 export async function getMessages(query: GetMessagesQuery) {
   const { status, search, sort, page, limit } = query;
 
-  const filter: Record<string, any> = {};
-  if (status && status !== "all") filter.status = status;
-  if (search?.trim()) {
-    // A typed "(" would otherwise be read as a pattern and throw.
-    const pattern = new RegExp(escapeRegex(search.trim()), "i");
-    filter.$or = [{ name: pattern }, { email: pattern }, { subject: pattern }];
-  }
+  const filter = where(
+    status && status !== "all" ? { status } : null,
+    search?.trim() ? searchOr(["name", "email", "subject"], search) : null
+  );
 
-  const skip = (page - 1) * limit;
-  const [messages, total] = await Promise.all([
-    Message.find(filter)
-      .sort(SORT_ORDERS[sort] || SORT_ORDERS.newest)
-      .skip(skip)
-      .limit(limit)
-      .lean(),
-    Message.countDocuments(filter),
-  ]);
+  const sortOrder = sortBy(sort, SORT_ORDERS, SORT_ORDERS.newest);
+
+  const { items: messages, total, pages } = await paginate(
+    () => Message.find(filter).sort(sortOrder).lean(),
+    () => Message.countDocuments(filter),
+    page,
+    limit
+  );
 
   return {
     messages,
-    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    pagination: { page, limit, total, totalPages: pages },
   };
 }
 

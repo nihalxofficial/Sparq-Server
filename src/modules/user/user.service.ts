@@ -17,31 +17,30 @@ import {
 import { getMembershipTier } from "../order/order.service";
 import { recordActivity, notifyUser } from "../activity/activity.service";
 import { normalizeRole, normalizeRoles } from "../../utils/roles";
-import { searchOr } from "../../utils/search";
+import { paginate, sortBy, searchOr, where } from "../../utils/query";
 
 export async function getUsers(query: GetUsersQuery) {
   const { role, status, member, search, page, limit } = query;
 
-  const filter: Record<string, any> = {};
-  // Admin filter by role uses the array so a rider-who-shops still surfaces
-  // under "rider". `$in` on a String[] field matches any array element.
-  if (role) filter.roles = { $in: [role] };
-  if (status) filter.status = status;
-  if (member) filter.member = member;
-  // Optional search across name and email fields (case-insensitive)
-  if (search?.trim()) {
-    filter.$or = searchOr(["name", "email"], search, ["_id"]).$or;
-  }
+  const filter = where(
+    role ? { roles: { $in: [role] } } : null,
+    status ? { status } : null,
+    member ? { member } : null,
+    search?.trim() ? searchOr(["name", "email"], search, ["_id"]) : null
+  );
 
-  const skip = (page - 1) * limit;
-  const [users, total] = await Promise.all([
-    User.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
-    User.countDocuments(filter),
-  ]);
+  const sort = sortBy(undefined, {}, { createdAt: -1 });
+
+  const { items: users, total, pages } = await paginate(
+    () => User.find(filter).sort(sort),
+    () => User.countDocuments(filter),
+    page,
+    limit
+  );
 
   return {
     users,
-    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    pagination: { page, limit, total, totalPages: pages },
   };
 }
 
