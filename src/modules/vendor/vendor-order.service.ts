@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import { ApiError } from "../../utils/apiError";
+import { escapeRegex } from "../../utils/regex";
 import { Product } from "../product/product.model";
 import { Order } from "../order/order.model";
 import { Delivery } from "../delivery/delivery.model";
@@ -110,10 +111,11 @@ export async function listMyVendorOrders(vendorId: string, query: VendorOrderQue
 
   if (search) {
     const q = search.trim();
+    const safe = escapeRegex(q);
     const matches: any[] = [
-      { orderNumber: { $regex: q, $options: "i" } },
-      { customerName: { $regex: q, $options: "i" } },
-      { city: { $regex: q, $options: "i" } },
+      { orderNumber: { $regex: safe, $options: "i" } },
+      { customerName: { $regex: safe, $options: "i" } },
+      { city: { $regex: safe, $options: "i" } },
     ];
     if (/^[0-9a-fA-F]{24}$/.test(q)) matches.push({ _id: q }, { orderId: q });
     conditions.push({ $or: matches });

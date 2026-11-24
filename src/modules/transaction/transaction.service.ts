@@ -2,6 +2,7 @@ import { ClientSession, Types } from "mongoose";
 import { Transaction } from "./transaction.model";
 import { VendorOrder } from "../vendor/vendor-order.model";
 import { GetTransactionsQuery } from "./transaction.validator";
+import { escapeRegex } from "../../utils/regex";
 
 export type PaymentMethod = "cod" | "bkash" | "rocket" | "nagad";
 
@@ -40,10 +41,11 @@ export async function getTransactions(query: GetTransactionsQuery) {
 
   if (search?.trim()) {
     const q = search.trim();
+    const safe = escapeRegex(q);
     const isId = /^[0-9a-fA-F]{24}$/.test(q);
     const searchOr: any[] = [
-      { reference: { $regex: q, $options: "i" } },
-      { method: { $regex: q, $options: "i" } },
+      { reference: { $regex: safe, $options: "i" } },
+      { method: { $regex: safe, $options: "i" } },
     ];
     if (isId) searchOr.push({ _id: q }, { userId: q }, { orderId: q });
     conditions.push({ $or: searchOr });
@@ -107,10 +109,11 @@ export async function getVendorTransactions(vendorId: string, query: GetTransact
 
   if (search?.trim()) {
     const q = search.trim();
+    const safe = escapeRegex(q);
     const isId = /^[0-9a-fA-F]{24}$/.test(q);
     const searchOr: any[] = [
-      { reference: { $regex: q, $options: "i" } },
-      { method: { $regex: q, $options: "i" } },
+      { reference: { $regex: safe, $options: "i" } },
+      { method: { $regex: safe, $options: "i" } },
     ];
     if (isId) searchOr.push({ _id: q }, { orderId: q });
     conditions.push({ $or: searchOr });

@@ -6,6 +6,7 @@ import { Order } from "../order/order.model";
 import { CreateReviewInput, UpdateReviewInput, GetReviewsQuery } from "./review.validator";
 import { ApiError } from "../../utils/apiError";
 import { idQuery } from "../../utils/ids";
+import { escapeRegex } from "../../utils/regex";
 import { isAdminRole } from "../../utils/roles";
 import { recordActivity } from "../activity/activity.service";
 
@@ -101,7 +102,7 @@ export async function getReviews(query: GetReviewsQuery, productScope?: string[]
   // If search is provided we need to join users/products to search across names/titles
   if (search && search.trim()) {
     const term = search.trim();
-    const searchRegex = new RegExp(term, "i");
+    const searchRegex = new RegExp(escapeRegex(term), "i");
 
     // A notification links to one review by its id, so an id finds itself.
     const searchOr: any[] = [

@@ -33,6 +33,7 @@ import {
   releaseCouponForOrder,
 } from "../coupon/coupon.service";
 import { sellingPriceOf } from "../product/product.service";
+import { escapeRegex } from "../../utils/regex";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -230,13 +231,14 @@ async function resolveShipping(subtotal: number, requested?: "free" | "standard"
 
 /** Free-text search over customer name, city, payment method and ids. */
 function buildOrderSearchCondition(search: string) {
-  const q = search.trim();
+  const raw = search.trim();
+  const safe = escapeRegex(raw);
   const matches: any[] = [
-    { "shippingAddress.fullName": { $regex: q, $options: "i" } },
-    { "shippingAddress.city":     { $regex: q, $options: "i" } },
-    { paymentMethod:              { $regex: q, $options: "i" } },
+    { "shippingAddress.fullName": { $regex: safe, $options: "i" } },
+    { "shippingAddress.city":     { $regex: safe, $options: "i" } },
+    { paymentMethod:              { $regex: safe, $options: "i" } },
   ];
-  if (/^[0-9a-fA-F]{24}$/.test(q)) matches.push({ _id: q }, { userId: q });
+  if (/^[0-9a-fA-F]{24}$/.test(raw)) matches.push({ _id: raw }, { userId: raw });
   return { $or: matches };
 }
 

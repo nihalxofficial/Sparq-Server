@@ -11,6 +11,7 @@ import {
 import { getMembershipTier } from "../order/order.service";
 import { recordActivity, notifyUser } from "../activity/activity.service";
 import { normalizeRole, normalizeRoles } from "../../utils/roles";
+import { escapeRegex } from "../../utils/regex";
 
 export async function getUsers(query: GetUsersQuery) {
   const { role, status, search, page, limit } = query;
@@ -23,7 +24,7 @@ export async function getUsers(query: GetUsersQuery) {
   // Optional search across name and email fields (case-insensitive)
   if (search?.trim()) {
     const q = search.trim();
-    const searchRegex = new RegExp(q, "i");
+    const searchRegex = new RegExp(escapeRegex(q), "i");
     const searchOr: Record<string, any>[] = [{ name: searchRegex }, { email: searchRegex }];
     // A notification links to the exact account by its id. Without this the
     // email fallback is a substring match, so one admin address can pull up
