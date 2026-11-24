@@ -2,7 +2,7 @@ import { ClientSession, Types } from "mongoose";
 import { Transaction } from "./transaction.model";
 import { VendorOrder } from "../vendor/vendor-order.model";
 import { GetTransactionsQuery } from "./transaction.validator";
-import { searchOr } from "../../utils/search";
+import { paginate, sortBy, searchOr, where } from "../../utils/query";
 
 export type PaymentMethod = "cod" | "bkash" | "rocket" | "nagad";
 
@@ -39,47 +39,41 @@ export async function getLatestTransactionForOrder(orderId: string) {
 
 export async function getTransactions(query: GetTransactionsQuery) {
   const { userId, orderId, status, method, search, sort, page = 1, limit = 10 } = query;
-  const conditions: any[] = [];
 
-  if (userId) conditions.push({ userId });
-  if (orderId) conditions.push({ orderId });
-  if (status && status !== "all") conditions.push({ status: status.toLowerCase() });
-  if (method && method !== "all") conditions.push({ method: method.toLowerCase() });
+  const filter = where(
+    userId ? { userId } : null,
+    orderId ? { orderId } : null,
+    status && status !== "all" ? { status: status.toLowerCase() } : null,
+    method && method !== "all" ? { method: method.toLowerCase() } : null,
+    search?.trim() ? searchOr(["reference", "method"], search, ["_id", "userId", "orderId"]) : null
+  );
 
-  if (search?.trim()) {
-    conditions.push(searchOr(["reference", "method"], search, ["_id", "userId", "orderId"]));
-  }
+  const sortCriteria = sortBy(
+    sort,
+    {
+      newest: { createdAt: -1 },
+      oldest: { createdAt: 1 },
+      amount_asc: { amount: 1 },
+      amount_desc: { amount: -1 },
+    },
+    { createdAt: -1 }
+  );
 
-  const filter = conditions.length > 0 ? { $and: conditions } : {};
-
-  const sortMap: Record<string, Record<string, 1 | -1>> = {
-    newest: { createdAt: -1 },
-    oldest: { createdAt: 1 },
-    amount_asc: { amount: 1 },
-    amount_desc: { amount: -1 },
-  };
-  const sortCriteria = sortMap[sort ?? ""] ?? { createdAt: -1 };
-
-  const skip = (page - 1) * limit;
-  const [transactions, total] = await Promise.all([
-    Transaction.find(filter)
-      .populate("userId", "name email image avatar")
-      .populate("orderId")
-      .sort(sortCriteria)
-      .skip(skip)
-      .limit(limit),
-    Transaction.countDocuments(filter),
-  ]);
+  const { items: transactions, total, pages } = await paginate(
+    () =>
+      Transaction.find(filter)
+        .populate("userId", "name email image avatar")
+        .populate("orderId")
+        .sort(sortCriteria),
+    () => Transaction.countDocuments(filter),
+    page,
+    limit
+  );
 
   return {
     transactions,
     total,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit) || 1,
-    },
+    pagination: { page, limit, total, totalPages: pages },
   };
 }
 
