@@ -14,13 +14,14 @@ import { normalizeRole, normalizeRoles } from "../../utils/roles";
 import { escapeRegex } from "../../utils/regex";
 
 export async function getUsers(query: GetUsersQuery) {
-  const { role, status, search, page, limit } = query;
+  const { role, status, member, search, page, limit } = query;
 
   const filter: Record<string, any> = {};
   // Admin filter by role uses the array so a rider-who-shops still surfaces
   // under "rider". `$in` on a String[] field matches any array element.
   if (role) filter.roles = { $in: [role] };
   if (status) filter.status = status;
+  if (member) filter.member = member;
   // Optional search across name and email fields (case-insensitive)
   if (search?.trim()) {
     const q = search.trim();
