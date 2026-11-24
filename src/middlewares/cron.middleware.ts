@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { Request, Response, NextFunction } from "express";
 import { ApiError } from "../utils/apiError";
 import { requireAuth } from "./auth.middleware";
+import { isAdminRole } from "../utils/roles";
 
 /**
  * Vercel Cron calls a route with `Authorization: Bearer <CRON_SECRET>`. The
@@ -36,7 +37,7 @@ export function requireCronOrAdmin(req: Request, res: Response, next: NextFuncti
       );
     }
     const role = (req.user?.role || "").toLowerCase();
-    if (role === "admin") {
+    if (isAdminRole(role)) {
       return next();
     }
     return next(new ApiError(403, "Forbidden: Store Admin privileges required"));
