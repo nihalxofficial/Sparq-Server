@@ -282,22 +282,10 @@ function suspendedRoleNames(user: any): string[] {
 }
 
 /**
- * Writes the whole approved list the way the admin desk means it.
- *
- * The raw `POST /:id/roles` payload used to land on `updateUser` untouched, so
- * a desk could park an account on a dashboard it no longer held, leave a
- * revoked vendor's marketplace state pointing at a stale application, or hand
- * an admin entry to an account that still shopped. This keeps every invariant
- * the rest of the system already assumes:
- *
- * - an administrator holds exactly one authority and never shops, so any
- *   customer/rider/vendor entry is dropped the moment admin is granted;
- * - every non-admin account keeps `customer`, because revoking a workspace
- *   must still leave the person able to sign in and shop;
- * - `activeRole` always names a held, unsuspended dashboard — when the old one
- *   disappears the account falls back to customer, or to its first entry;
- * - removing vendor/rider authority clears the marketplace state the same way
- *   `revokeRole` does, so no stale "approved" screen can reopen a workspace.
+ * Writes the whole approved list the way the admin desk means it: an admin holds
+ * one authority and never shops, every non-admin keeps `customer`, `activeRole`
+ * names a held unsuspended dashboard, and dropping vendor/rider clears the
+ * marketplace state — the invariants the rest of the system assumes.
  */
 export async function adminSetRoles(userId: string, input: { roles: string[] }, adminId?: string) {
   if (!Types.ObjectId.isValid(userId)) throw new ApiError(404, "User not found");
@@ -455,19 +443,9 @@ export async function setRoleSuspension(
 }
 
 /**
- * Promotes the shared demo account to sandboxed admin authority.
- *
- * The login screen advertises `DEMO_ADMIN_EMAIL` as an admin, but a normal
- * sign-up (or a row the migration left as a plain customer) only ever carries
- * the `customer` entry — so that account lands on the storefront and gets a
- * 403 at the admin gate. This runs at startup and gives the one advertised
- * address the `demoadmin` role.
- *
- * The array holds `demoadmin` and nothing else, on purpose: an admin never
- * shops, so the customer entry stays out and the storefront, cart and wishlist
- * remain locked to real buyers. It is idempotent and only ever touches the
- * account whose email matches, so a restart cannot demote it again and no other
- * row is affected.
+ * Gives the advertised demo account the `demoadmin` role at startup, since a
+ * plain sign-up only carries `customer`. It holds `demoadmin` alone (an admin
+ * never shops) and is idempotent, so a restart cannot demote it.
  */
 export async function ensureDemoAdmin(): Promise<{ promoted: boolean }> {
   const email = (process.env.DEMO_ADMIN_EMAIL || "").trim().toLowerCase();
@@ -495,19 +473,9 @@ export async function ensureDemoAdmin(): Promise<{ promoted: boolean }> {
 }
 
 /**
- * One-off sweep that gives every existing row a `roles` array and an
- * `activeRole` mirror, and heals rows whose legacy `role` drifted out of sync
- * with the authority array.
- *
- * Runs at server start and is idempotent: only rows that are missing either
- * field — or whose legacy `role` still names an administrator the `roles`
- * array lost — are written, so a restart never re-touches an account that
- * already fits the shape.
- *
- * The administrator clause closes a real gap: an account whose `role` was set
- * to `admin` but whose `roles` stayed `["customer"]` would otherwise be left
- * alone (both fields exist), stranding the admin on the customer dashboard and
- * locking them out of the admin gate with a 403.
+ * One-off, idempotent sweep at startup: gives every row a `roles` array and an
+ * `activeRole` mirror, and heals a legacy `role` that drifted out of sync with
+ * the authority array (an `admin` whose `roles` lost it would be locked out).
  */
 export async function syncLegacyRoles(): Promise<{ updated: number }> {
   const cursor = User.find({
