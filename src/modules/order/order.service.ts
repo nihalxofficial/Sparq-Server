@@ -190,17 +190,27 @@ async function buildOrderItems(items: CreateOrderInput["items"]) {
 }
 
 /**
- * An explicit choice from checkout wins; otherwise the fee and delivery window
- * are derived from the live site settings.
+ * An explicit choice from checkout is honoured only when it is still valid:
+ * "free" is re-checked against the live threshold, so a tampered request cannot
+ * post `shippingMethod: "free"` and escape the fee.
  */
 async function resolveShipping(subtotal: number, requested?: "free" | "standard" | "express") {
   const resolved = await resolveShippingConfig(subtotal);
   if (!requested) return resolved;
 
-  const fee =
-    requested === "free"    ? 0 :
-    requested === "express" ? resolved.expressFee :
-    resolved.method === "free" ? 0 : resolved.fee;
+  // "free" is a claim from the browser, not a decision: grant it only when the
+  // basket really qualifies, otherwise charge the standard fee it falls back to.
+  if (requested === "free") {
+    return resolved.method === "free"
+      ? { method: "free" as const, fee: 0, estimatedDelivery: resolved.estimatedDelivery }
+      : {
+          method: resolved.method,
+          fee: resolved.fee,
+          estimatedDelivery: resolved.estimatedDelivery,
+        };
+  }
+
+  const fee = requested === "express" ? resolved.expressFee : resolved.fee;
 
   return { method: requested, fee, estimatedDelivery: resolved.estimatedDelivery };
 }
