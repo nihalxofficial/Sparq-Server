@@ -1,6 +1,6 @@
 import { Cart } from "./cart.model";
 import { Product } from "../product/product.model";
-import { sellingPriceOf } from "../product/product.service";
+import { formatProduct, sellingPriceOf } from "../product/product.service";
 import { User } from "../user/user.model";
 import { ApiError } from "../../utils/apiError";
 import { canShopWithRoles, canSwitchToShopper, roleLabel } from "../../utils/roles";
@@ -13,11 +13,15 @@ export async function getCartByUserId(userId: string) {
   let totalItems = 0;
 
   const formatted = items.map((item: any) => {
-    const product = item.productId;
+    const raw = item.productId;
     // The price on the product card is the price in the cart: a lapsed offer
     // has already reverted, so the total cannot charge the old deal.
-    const price = product ? sellingPriceOf(product) : 0;
+    const price = raw ? sellingPriceOf(raw) : 0;
     const lineTotal = price * item.quantity;
+    // The product is shaped the same way the shop shapes it, so the effective
+    // price travels with it and the screen cannot recompute a different total
+    // from the stored price.
+    const product = raw ? formatProduct(raw) : null;
 
     totalPrice += lineTotal;
     totalItems += item.quantity;

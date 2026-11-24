@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import type { ClientSession } from "mongoose";
 import { Coupon } from "./coupon.model";
 import { Product } from "../product/product.model";
+import { sellingPriceOf } from "../product/product.service";
 import { ApiError } from "../../utils/apiError";
 import type { CouponQuery, CreateCouponInput, UpdateCouponInput } from "./coupon.validator";
 
@@ -371,7 +372,7 @@ export async function moderateCoupon(
 export async function loadCouponLines(items: { productId: string; quantity: number }[]): Promise<CouponLine[]> {
   const ids = items.map((item) => item.productId);
   const rows = await Product.find({ _id: { $in: ids } })
-    .select("_id price vendorId categoryId ownerId")
+    .select("_id price originalPrice offerEndDate vendorId categoryId ownerId")
     .lean();
 
   const byId = new Map(rows.map((row) => [String(row._id), row]));
@@ -384,7 +385,9 @@ export async function loadCouponLines(items: { productId: string; quantity: numb
         productId: String(product._id),
         vendorId: product.vendorId ? String(product.vendorId) : null,
         categoryId: product.categoryId ? String(product.categoryId) : null,
-        price: Number(product.price) || 0,
+        // The price the buyer is charged, so the coupon is judged on the same
+        // number the order line uses — see sellingPriceOf.
+        price: sellingPriceOf(product as any),
         quantity: Number(item.quantity) || 0,
       } satisfies CouponLine;
     })
