@@ -50,39 +50,25 @@ export const deleteCoupon = catchAsync(async (req, res) => {
 });
 
 /**
- * The store team's block, unblock or removal of a code — including a seller's.
+ * The store team's removal of a seller's code.
  *
- * The seller is told about it. A code vanishing from the checkout without a
- * word is indistinguishable from a bug, so the reason the desk wrote travels to
- * the seller's bell with the coupon id it belongs to.
+ * The seller is told the code was removed, with the reason the desk wrote, so a
+ * vanishing code is never mistaken for a bug.
  */
 export const moderateCoupon = catchAsync(async (req, res) => {
-  const result = await couponService.moderateCoupon(
-    req.params.id as string,
-    req.body,
-    req.user!.id
-  );
+  const result = await couponService.moderateCoupon(req.params.id as string);
 
   const vendorId = result.coupon?.vendorId ? String(result.coupon.vendorId) : "";
   if (vendorId) {
-    const code = result.coupon.code;
-    const unblocking = req.body.action === "unblock";
     await notifyVendorCoupon({
       userId: vendorId,
-      title: unblocking ? `Your coupon ${code} is live again` : `Your coupon ${code} was stopped`,
-      detail: unblocking
-        ? "The store team put it back on the checkout."
-        : result.coupon.blockedReason || "Stopped by the store team",
-      couponId: String(result.coupon._id),
+      title: `Your coupon ${result.coupon.code} was removed`,
+      detail: req.body.reason?.trim() || "Removed by the store team.",
+      couponId: req.params.id as string,
     });
   }
 
-  const message = result.deleted
-    ? "Coupon deleted"
-    : req.body.action === "unblock"
-      ? "Coupon put back on the checkout"
-      : "Coupon stopped";
-  apiResponse(res, 200, result, message);
+  apiResponse(res, 200, result, "Coupon deleted");
 });
 
 /**

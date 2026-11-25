@@ -303,49 +303,16 @@ export async function stopCoupon(id: string, vendorId?: string, mode: "inactive"
 }
 
 /**
- * The store team's control over someone else's code: block, restore or delete.
- * The reason and the moment are written on the row so the seller can see why
- * their code went quiet. Unblocking skips the seller's plan allowance on purpose
- * — the desk putting a code back is the override.
+ * The store team's control over a seller's code: remove it.
+ *
+ * The desk does not stop or re-price a seller's code — a seller owns their
+ * codes. It can delete one it judges misleading, and the seller is told why.
  */
-export async function moderateCoupon(
-  id: string,
-  input: { action: "block" | "unblock" | "delete"; reason?: string },
-  adminId?: string
-) {
+export async function moderateCoupon(id: string) {
   const row = await requireCoupon(id);
-
-  if (input.action === "unblock") {
-    row.isActive = true;
-    row.blockedReason = "";
-    row.blockedAt = null;
-    row.blockedBy = null;
-    await row.save();
-    return { coupon: toCouponDto(row.toObject()), deleted: false, blocked: false };
-  }
-
-  if (input.action === "delete") {
-    // A code that has already saved somebody money is kept as a stopped row:
-    // the ledger and the orders that quote it outlive the code itself.
-    if (Number(row.usedCount) > 0) {
-      row.isActive = false;
-      row.blockedReason = (input.reason || "").trim() || "Removed by the store team";
-      row.blockedAt = new Date();
-      row.blockedBy = adminId ? new Types.ObjectId(adminId) : null;
-      await row.save();
-      return { coupon: toCouponDto(row.toObject()), deleted: false, blocked: true };
-    }
-
-    await Coupon.deleteOne({ _id: row._id });
-    return { coupon: toCouponDto(row.toObject()), deleted: true, blocked: true };
-  }
-
-  row.isActive = false;
-  row.blockedReason = (input.reason || "").trim() || "Stopped by the store team";
-  row.blockedAt = new Date();
-  row.blockedBy = adminId ? new Types.ObjectId(adminId) : null;
-  await row.save();
-  return { coupon: toCouponDto(row.toObject()), deleted: false, blocked: true };
+  const coupon = toCouponDto(row.toObject());
+  await Coupon.deleteOne({ _id: row._id });
+  return { coupon, deleted: true };
 }
 
 /**
