@@ -782,7 +782,7 @@ export async function getOrders(query: GetOrdersQuery) {
     () =>
       Order.find(filter)
         .populate("userId", "name email image avatar")
-        .populate("items.productId")
+        .populate({ path: "items.productId", populate: { path: "categoryId", select: "name" } })
         .sort(sortCriteria),
     () => Order.countDocuments(filter),
     page,
@@ -853,7 +853,7 @@ export async function getOrders(query: GetOrdersQuery) {
 export async function getOrderById(id: string) {
   const order = await Order.findById(id)
     .populate("userId", "name email image avatar")
-    .populate("items.productId");
+    .populate({ path: "items.productId", populate: { path: "categoryId", select: "name" } });
   if (!order) throw new ApiError(404, "Order not found");
 
   const transaction = await getLatestTransactionForOrder(id);
