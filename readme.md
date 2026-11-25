@@ -41,7 +41,7 @@ This is the backend API for [Sparq](https://github.com/demoprojectbdsoft/Sparq-E
 ✅ Business Rules         All prices, discounts, totals computed server-side
 ✅ Authorization          Session/JWT verification, role guards, ownership checks
 ✅ Data Integrity         Transactional operations (orders, points, stock)
-✅ Scheduled Jobs         Demo restore, delivery offers, vendor periods, placements, daily rates
+✅ Scheduled Jobs         Demo restore, delivery offers, vendor periods, placements, daily rates, seller timeout
 ✅ Email Delivery         SMTP emails for orders and password resets
 ✅ Document Storage       Applicant uploads, kept behind a signed link
 ```
@@ -332,6 +332,7 @@ DELETE /api/vendor-products/:id              Vendor  Archive product
 GET    /api/vendor-orders                    Vendor  List fulfillment groups
 GET    /api/vendor-orders/summary            Vendor  Order counts
 PATCH  /api/vendor-orders/:id/status         Vendor  Update status
+GET    /api/vendor-orders/expire             ⏰  Reject groups unanswered for 24h
 
 # Vendor Subscription
 GET    /api/vendor-subscription/mine         Vendor  Get subscription
@@ -934,7 +935,8 @@ Configured in `vercel.json`:
     { "path": "/api/vendor-subscription/expire", "schedule": "15 19 * * *" },
     { "path": "/api/promotions/expire", "schedule": "30 19 * * *" },
     { "path": "/api/products/expire", "schedule": "45 19 * * *" },
-    { "path": "/api/currency/refresh", "schedule": "0 2 * * *" }
+    { "path": "/api/currency/refresh", "schedule": "0 2 * * *" },
+    { "path": "/api/vendor-orders/expire", "schedule": "0 * * * *" }
   ]
 }
 ```
