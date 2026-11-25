@@ -202,24 +202,31 @@ export function toPublicStoreDto(store: any) {
     productCount: dto.productCount,
     reviewCount: dto.reviewCount,
     rating: dto.rating,
-    completedOrders: dto.completedOrders,
-    // Filled by `withSuccessRates` on the two public reads; a store that has
-    // never closed a parcel reads 0 rather than a misleading 100.
+    // Both figures are placeholders here: `withStoreRecords` fills them from the
+    // shop's own closed order groups on every public read, so the storefront
+    // counts delivered parcels live instead of reading a stale stored counter.
+    // A store that has never closed a parcel reads 0 rather than a misleading 100.
+    completedOrders: 0,
     successRate: 0,
     createdAt: dto.createdAt,
   };
 }
 
 /**
- * How often a shop's parcels actually arrived.
+ * The closed-parcel record of each shop: how many parcels it delivered, and how
+ * often those arrived.
  *
- * Only parcels that reached an end are counted: a group still moving is
- * neither a success nor a failure, so the figure is delivered against
- * delivered-plus-stopped. A shop with nothing closed yet reads 0 — a brand-new
- * seller has no record to boast about, and 100% off zero parcels would be a
- * number the shop never earned.
+ * Both numbers come from the shop's own order groups, never from a stored
+ * counter, so the storefront can never disagree with the order board about how
+ * much a shop has actually finished. Only parcels that reached an end are
+ * counted: a group still moving is neither a success nor a failure, so the rate
+ * is delivered against delivered-plus-stopped. A shop with nothing closed yet
+ * reads 0 delivered and 0% — a brand-new seller has no record to boast about,
+ * and 100% off zero parcels would be a number the shop never earned.
  */
-async function successRatesOf(storeIds: string[]): Promise<Map<string, number>> {
+async function storeRecordsOf(
+  storeIds: string[]
+): Promise<Map<string, { completedOrders: number; successRate: number }>> {
   const ids = storeIds
     .filter((id) => Types.ObjectId.isValid(id))
     .map((id) => new Types.ObjectId(id));
@@ -238,21 +245,31 @@ async function successRatesOf(storeIds: string[]): Promise<Map<string, number>> 
     },
   ]);
 
-  const rates = new Map<string, number>();
+  const records = new Map<string, { completedOrders: number; successRate: number }>();
   for (const row of rows) {
-    const closed = (Number(row.delivered) || 0) + (Number(row.stopped) || 0);
-    rates.set(
-      String(row._id),
-      closed > 0 ? Math.round(((Number(row.delivered) || 0) / closed) * 100) : 0
-    );
+    const delivered = Number(row.delivered) || 0;
+    const closed = delivered + (Number(row.stopped) || 0);
+    records.set(String(row._id), {
+      completedOrders: delivered,
+      successRate: closed > 0 ? Math.round((delivered / closed) * 100) : 0,
+    });
   }
-  return rates;
+  return records;
 }
 
 /** Folds the closed-parcel record into the public rows that were already mapped. */
-async function withSuccessRates<T extends { _id: string }>(stores: T[]): Promise<(T & { successRate: number })[]> {
-  const rates = await successRatesOf(stores.map((store) => store._id));
-  return stores.map((store) => ({ ...store, successRate: rates.get(store._id) ?? 0 }));
+async function withStoreRecords<T extends { _id: string }>(
+  stores: T[]
+): Promise<(T & { completedOrders: number; successRate: number })[]> {
+  const records = await storeRecordsOf(stores.map((store) => store._id));
+  return stores.map((store) => {
+    const record = records.get(store._id);
+    return {
+      ...store,
+      completedOrders: record?.completedOrders ?? 0,
+      successRate: record?.successRate ?? 0,
+    };
+  });
 }
 
 /** The store a public page reads: visible, active and not suspended. */
@@ -270,8 +287,8 @@ export async function getVisibleStoreBySlug(slug: string) {
 /** The same shop for a public page, with the private fields off. */
 export async function getPublicStoreBySlug(slug: string) {
   const store = toPublicStoreDto(await getVisibleStoreBySlug(slug));
-  const [withRate] = await withSuccessRates([store]);
-  return withRate;
+  const [withRecord] = await withStoreRecords([store]);
+  return withRecord;
 }
 
 const PUBLIC_STORE_SORTS: Record<string, Record<string, 1 | -1>> = {
@@ -318,7 +335,7 @@ export async function listPublicStores(query: PublicStoreQuery) {
   ]);
 
   return {
-    stores: await withSuccessRates(rows.map(toPublicStoreDto)),
+    stores: await withStoreRecords(rows.map(toPublicStoreDto)),
     total,
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
   };
@@ -379,7 +396,7 @@ export async function listStores(query: StoreQuery) {
   }));
 
   return {
-    stores: await withSuccessRates(stores),
+    stores: await withStoreRecords(stores),
     total,
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
   };
