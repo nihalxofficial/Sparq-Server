@@ -623,6 +623,15 @@ cancel. It is idempotent (the filter requires an unreversed row), so a repeated
 cancel cannot refund twice. A seller-group rejection does **not** release it; only a
 real order cancellation does.
 
+### Admin Notifications
+
+The store team gets a shared-feed line **and an email** for the events it acts on:
+a new order, every order status change, a review, a vendor or rider application,
+a plan/payment, a product submitted for review, and any delivery problem. Emails
+go to the store inbox — `supportEmail` in Site Settings, or the `STORE_INBOX`
+environment variable. Like the seller notices, they are best-effort: a mail
+problem never fails the order or review that caused them.
+
 ### Seller Notifications
 
 A seller gets the same two channels the store team does — a line in their bell and
