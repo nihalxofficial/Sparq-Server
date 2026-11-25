@@ -35,10 +35,13 @@ export const warehouseSchema = new Schema(
   { _id: false }
 );
 
-/** The body a form sends; every line is optional so a patch can fill one. */
+/**
+ * The body a form sends. The street line is required — a rider has to be sent
+ * somewhere — while the finer lines stay optional so a patch can fill them in.
+ */
 export const warehouseInputSchema = z.object({
   label: z.string().trim().max(120).optional(),
-  address: z.string().trim().max(400).optional(),
+  address: z.string().trim().min(1, "A warehouse address is required").max(400),
   city: z.string().trim().max(120).optional(),
   area: z.string().trim().max(120).optional(),
   postalCode: z.string().trim().max(20).optional(),
