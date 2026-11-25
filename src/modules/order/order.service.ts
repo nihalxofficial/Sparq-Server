@@ -37,6 +37,7 @@ import { sellingPriceOf } from "../product/product.service";
 import { roundMoney } from "../../utils/money";
 import { paginate, sortBy, searchOr, where } from "../../utils/query";
 import { notifyVendor } from "../vendor/vendor.notifications";
+import { notifyAdminEmail } from "../activity/activity.notifications";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -687,6 +688,19 @@ export async function createOrder(data: CreateOrderInput, userId: string) {
     });
   }
 
+  // The store team lives in the dashboard, so the shared inbox is told too.
+  await notifyAdminEmail({
+    heading: `New order ${shortNumber}`,
+    intro: orderSummary(order),
+    orderNumber: shortNumber,
+    rows: [
+      { label: "Customer", value: (order as any).shippingAddress?.fullName },
+      { label: "Total", value: money((order as any).totalAmount) },
+    ],
+    actionLabel: "Open orders",
+    actionPath: "/dashboard/admin/orders",
+  });
+
   return order;
 }
 
@@ -1085,6 +1099,14 @@ export async function updateOrderStatus(
         emailSubject: `Order ${shortOrderNumber(updated._id)} ${data.orderStatus}`,
       });
     }
+
+    await notifyAdminEmail({
+      heading: `Order ${shortOrderNumber(updated._id)} ${data.orderStatus}`,
+      intro: `The order is now ${data.orderStatus}.`,
+      orderNumber: shortOrderNumber(updated._id),
+      actionLabel: "Open orders",
+      actionPath: "/dashboard/admin/orders",
+    });
   }
 
   return updated;

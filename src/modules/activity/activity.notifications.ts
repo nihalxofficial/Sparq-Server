@@ -335,3 +335,26 @@ export async function notifyAdminDeliveryEmail(params: {
     console.error("[activity] Admin delivery email failed:", (err as Error).message);
   }
 }
+
+/**
+ * Any store-team event by email, to the same inbox the delivery notices use.
+ *
+ * The store team lives in the dashboard, not in a mail client, so a new order or
+ * a fresh review has to reach the shared inbox to be noticed. Same template,
+ * same best-effort rule: a mail problem never fails the action.
+ */
+export async function notifyAdminEmail(params: {
+  heading: string;
+  intro?: string;
+  orderNumber?: string;
+  rows?: { label: string; value?: string | number | null }[];
+  note?: string;
+  actionLabel?: string;
+  actionPath?: string;
+}) {
+  return notifyAdminDeliveryEmail({
+    actionLabel: "Open dashboard",
+    actionPath: "/dashboard/admin",
+    ...params,
+  });
+}

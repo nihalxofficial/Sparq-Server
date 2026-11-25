@@ -1,4 +1,5 @@
 import { notifyUser, recordActivity, type PersonalActivityType } from "../activity/activity.service";
+import { notifyAdminEmail } from "../activity/activity.notifications";
 import { User } from "../user/user.model";
 import { sendMail } from "../../utils/mailer";
 
@@ -90,6 +91,12 @@ export async function notifyAdminVendorApplication(params: {
     detail: params.detail || "",
     ref: params.applicationId,
   });
+  await notifyAdminEmail({
+    heading: params.title,
+    intro: params.detail,
+    actionLabel: "Open vendors",
+    actionPath: "/dashboard/admin/vendors",
+  });
 }
 
 /** A subscription or payment event for the vendor. */
@@ -121,6 +128,12 @@ export async function notifyAdminVendorSubscription(params: {
     title: params.title,
     detail: params.detail || "",
     ref: params.subscriptionId,
+  });
+  await notifyAdminEmail({
+    heading: params.title,
+    intro: params.detail,
+    actionLabel: "Open vendors",
+    actionPath: "/dashboard/admin/vendors",
   });
 }
 
@@ -206,6 +219,12 @@ export async function notifyAdminProductReview(params: {
     title: params.title,
     detail: params.detail || "",
     ref: params.productId,
+  });
+  await notifyAdminEmail({
+    heading: params.title,
+    intro: params.detail,
+    actionLabel: "Open products",
+    actionPath: "/dashboard/admin/products",
   });
 }
 

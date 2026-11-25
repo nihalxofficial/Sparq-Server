@@ -8,6 +8,7 @@ import { ApiError } from "../../utils/apiError";
 import { idQuery } from "../../utils/ids";
 import { escapeRegex } from "../../utils/regex";
 import { notifyVendor } from "../vendor/vendor.notifications";
+import { notifyAdminEmail } from "../activity/activity.notifications";
 import { isAdminRole } from "../../utils/roles";
 import { recordActivity } from "../activity/activity.service";
 
@@ -257,6 +258,18 @@ export async function createReview(data: CreateReviewInput, userId: string) {
       emailSubject: `New review on ${product?.title}`,
     });
   }
+
+  // The store team answers reviews, so the shared inbox is told as well.
+  await notifyAdminEmail({
+    heading: "A new review was posted",
+    intro: `${user?.name || "A customer"} rated ${product?.title} ${review.rating}/5.`,
+    rows: [
+      { label: "Product", value: product?.title },
+      { label: "Rating", value: `${review.rating}/5` },
+    ],
+    actionLabel: "Open reviews",
+    actionPath: "/dashboard/admin/reviews",
+  });
 
   return formatReview(
     { ...review.toObject(), createdAt: (review as any).createdAt },

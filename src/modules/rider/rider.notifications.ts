@@ -1,4 +1,5 @@
 import { notifyUser, recordActivity } from "../activity/activity.service";
+import { notifyAdminEmail } from "../activity/activity.notifications";
 
 /**
  * Every rider-side notification, in one place.
@@ -34,5 +35,11 @@ export async function notifyAdminRiderApplication(params: {
     title: params.title,
     detail: params.detail || "",
     ref: params.applicationId,
+  });
+  await notifyAdminEmail({
+    heading: params.title,
+    intro: params.detail,
+    actionLabel: "Open riders",
+    actionPath: "/dashboard/admin/riders",
   });
 }
