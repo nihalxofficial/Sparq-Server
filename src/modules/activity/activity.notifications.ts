@@ -245,8 +245,6 @@ export async function notifyRiderAssigned(riderId: string, info: RiderAssignment
         { label: "Delivery fee", value: money(info.fee) },
         { label: "Respond before", value: info.expiresAt?.toISOString() },
       ],
-      actionLabel: "View & respond",
-      actionPath: `/dashboard/rider/deliveries/${info.deliveryId}`,
       brand,
     });
   } catch (err) {
