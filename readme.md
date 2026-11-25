@@ -613,6 +613,15 @@ const eligibleItems = cart.items.filter(item => {
 const discount = calculateDiscount(eligibleItems, coupon);
 ```
 
+**Cancelling an order gives the use back.** `applyCancellation` calls
+`releaseCouponForOrder`, which stamps that order's redemption `reversedAt` and
+decrements `usedCount` and `discountGiven`. Both the per-customer count and the
+guarded redeem ignore reversed rows, so one use of the per-customer and total
+allowances is freed — a code with `perCustomerLimit: 1` can be used again after a
+cancel. It is idempotent (the filter requires an unreversed row), so a repeated
+cancel cannot refund twice. A seller-group rejection does **not** release it; only a
+real order cancellation does.
+
 ### Featured Promotions
 
 **Two Kinds:**
