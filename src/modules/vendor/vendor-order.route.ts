@@ -1,11 +1,15 @@
 import { Router } from "express";
 import { requireAuth } from "../../middlewares/auth.middleware";
 import { requireRole } from "../../middlewares/role.middleware";
+import { requireCronOrAdmin } from "../../middlewares/cron.middleware";
 import { validate } from "../../utils/validate";
 import * as controller from "./vendor-order.controller";
 import { vendorOrderStatusSchema } from "./vendor-order.validator";
 
 const router = Router();
+
+// Cron must sit above the vendor guard: Vercel calls this without a token.
+router.get("/expire", requireCronOrAdmin, controller.expireUnanswered);
 
 router.use(requireAuth, requireRole("vendor"));
 

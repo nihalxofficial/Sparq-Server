@@ -6,6 +6,7 @@ import cron from "node-cron";
 import { restoreDemoChanges } from "./modules/demo/demo.service";
 import { expireStaleDeliveries } from "./modules/delivery/delivery.service";
 import { expireDueSubscriptions } from "./modules/vendor/vendor-subscription.service";
+import { expireUnansweredVendorOrders } from "./modules/vendor/vendor-order.service";
 import { expireDuePromotions } from "./modules/vendor/featured-promotion.service";
 import { refreshCurrencyRates } from "./modules/currency/currency.service";
 import { syncLegacyRoles, ensureDemoAdmin } from "./modules/user/user.service";
@@ -137,12 +138,29 @@ async function startServer() {
     },
     { timezone }
   );
+
+  // A seller who never answers must not hold the order forever: after 24 hours
+  // the group is rejected, which cancels the order and returns the stock.
+  cron.schedule(
+    "0 * * * *",
+    async () => {
+      try {
+        const result = await expireUnansweredVendorOrders();
+        if (result.expired > 0) {
+          console.log(`[CRON] ⏰ ${result.expired} unanswered seller order(s) rejected`);
+        }
+      } catch (err) {
+        console.error("[CRON] ❌ Failed to reject unanswered seller orders:", err);
+      }
+    },
+    { timezone }
+  );
   }
 
   app.listen(ENV.PORT, () => {
     console.log(`Server running on port ${ENV.PORT}`);
     console.log(
-      `[CRON] Demo restore 12:00 AM · vendor periods 12:45 AM · placements 1:00 AM · rates 2:00 AM · deliveries every 10 min`
+      `[CRON] Demo restore 12:00 AM · vendor periods 12:45 AM · placements 1:00 AM · rates 2:00 AM · deliveries every 10 min · seller timeout hourly`
     );
   });
 }

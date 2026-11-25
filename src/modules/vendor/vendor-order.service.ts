@@ -338,5 +338,38 @@ export async function getVendorOrderSummary(vendorId: string) {
   return { pending, active, completed, total };
 }
 
+/**
+ * Rejects seller groups nobody answered within a day.
+ *
+ * A customer's order must not sit waiting forever because a shop never opened
+ * it. Each stale pending group is rejected exactly as the seller would have —
+ * stock back, the parent cancelled, the reason recorded — so the timeout and a
+ * real rejection leave the same state.
+ */
+export async function expireUnansweredVendorOrders() {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const stale = await VendorOrder.find({
+    status: "pending",
+    createdAt: { $lt: cutoff },
+  })
+    .select("_id vendorId")
+    .lean();
+
+  let expired = 0;
+  for (const row of stale) {
+    try {
+      await updateMyVendorOrderStatus(String(row.vendorId), String(row._id), {
+        status: "rejected",
+        reason: "No response after 24 hours",
+      });
+      expired++;
+    } catch (err) {
+      // One odd row must not stop the sweep.
+      console.error(`[vendor-timeout] ${String(row._id)}:`, (err as Error).message);
+    }
+  }
+  return { expired };
+}
+
 /** Kept for callers that need the enum list without importing the model. */
 export const vendorOrderStatuses = VENDOR_ORDER_STATUSES;

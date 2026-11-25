@@ -35,6 +35,12 @@ export const updateMyOrderStatus = catchAsync(async (req, res) => {
   apiResponse(res, 200, order, "Order updated");
 });
 
+/** Cron: reject seller groups nobody answered within 24 hours. */
+export const expireUnanswered = catchAsync(async (_req, res) => {
+  const result = await vendorOrderService.expireUnansweredVendorOrders();
+  apiResponse(res, 200, result, "Unanswered seller orders expired");
+});
+
 /** The four counters the overview shows, counted from the seller's own rows. */
 export const getOrderSummary = catchAsync(async (req, res) => {
   const summary = await vendorOrderService.getVendorOrderSummary(req.user!.id);

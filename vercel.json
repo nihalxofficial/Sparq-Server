@@ -30,6 +30,10 @@
     {
       "path": "/api/currency/refresh",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/vendor-orders/expire",
+      "schedule": "0 * * * *"
     }
   ],
   "routes": [
