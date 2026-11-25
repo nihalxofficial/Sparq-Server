@@ -39,6 +39,7 @@ import vendorPromotionRoutes from "./modules/vendor/vendor-promotion.route";
 import riderApplicationRoutes from "./modules/rider/rider-application.route";
 import fileRoutes from "./modules/file/file.route";
 import currencyRoutes from "./modules/currency/currency.route";
+import cronRoutes from "./modules/cron/cron.route";
 import { errorMiddleware } from "./middlewares/error.middleware";
 import { notFound } from "./middlewares/notFound.middleware";
 
@@ -125,6 +126,7 @@ app.use("/api/vendor-promotions", vendorPromotionRoutes);
 app.use("/api/rider-applications", riderApplicationRoutes);
 app.use("/api/currency", currencyRoutes);
 app.use("/api/demo", demoRoutes);
+app.use("/api/cron", cronRoutes);
 
 app.use(notFound);
 app.use(errorMiddleware);

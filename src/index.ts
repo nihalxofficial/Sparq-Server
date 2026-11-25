@@ -52,9 +52,12 @@ async function startServer() {
 
   const timezone = process.env.CRON_TIMEZONE || "Asia/Dhaka";
 
-  // On Vercel the schedules in `vercel.json` run these sweeps, so the
-  // in-process cron would only fire them a second time. It is armed on a
-  // long-running host, and left off where the platform's own cron is used.
+  // On Vercel a single daily cron in `vercel.json` calls /api/cron/daily, which
+  // runs every sweep in one pass. A long-running host instead arms the finer
+  // in-process jobs below, so the same work is never scheduled twice.
+  if (process.env.VERCEL) {
+    console.log("[CRON] Vercel detected — scheduled work runs via the daily Cron job at /api/cron/daily");
+  }
   if (!process.env.VERCEL) {
   // Schedule daily restore of demo admin changes at 12:00 AM (midnight local time)
   cron.schedule(

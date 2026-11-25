@@ -8,32 +8,8 @@
   ],
   "crons": [
     {
-      "path": "/api/demo/restore",
-      "schedule": "0 18 * * *"
-    },
-    {
-      "path": "/api/deliveries/expire",
-      "schedule": "0 18 * * *"
-    },
-    {
-      "path": "/api/vendor-subscription/expire",
-      "schedule": "15 19 * * *"
-    },
-    {
-      "path": "/api/promotions/expire",
+      "path": "/api/cron/daily",
       "schedule": "30 19 * * *"
-    },
-    {
-      "path": "/api/products/expire",
-      "schedule": "45 19 * * *"
-    },
-    {
-      "path": "/api/currency/refresh",
-      "schedule": "0 2 * * *"
-    },
-    {
-      "path": "/api/vendor-orders/expire",
-      "schedule": "0 * * * *"
     }
   ],
   "routes": [
