@@ -44,6 +44,27 @@ async function assertProductsAreOwn(userId: string, productIds: string[]) {
   }
 }
 
+/**
+ * A coupon may only cover categories the seller actually sells in.
+ *
+ * The checkout limits a vendor code to the seller's own lines anyway, so a
+ * foreign category would only be a promise the code could never keep. Refusing
+ * it here keeps that promise honest.
+ */
+async function assertCategoriesAreOwn(userId: string, categoryIds: string[]) {
+  if (!categoryIds || categoryIds.length === 0) return;
+
+  const wanted = new Set(categoryIds);
+  const found = await Product.distinct("categoryId", {
+    $or: [{ vendorId: userId }, { ownerId: userId }],
+    categoryId: { $in: [...wanted].map((id) => new Types.ObjectId(id)) },
+  });
+
+  if (found.length !== wanted.size) {
+    throw new ApiError(400, "A coupon can only cover categories you sell in");
+  }
+}
+
 export async function listMyCoupons(userId: string, query: CouponQuery) {
   return couponService.listCoupons(query, { vendorId: userId });
 }
@@ -56,6 +77,7 @@ export async function getMyCoupon(userId: string, id: string) {
 export async function createMyCoupon(userId: string, input: CreateCouponInput) {
   const store = await requireTradingStore(userId, "running coupons");
   await assertProductsAreOwn(userId, input.productIds);
+  await assertCategoriesAreOwn(userId, input.categoryIds);
   await assertWithinLimit(userId, "coupon");
 
   return couponService.createCoupon(input, {
@@ -77,6 +99,9 @@ export async function updateMyCoupon(userId: string, id: string, input: UpdateCo
 
   if (input.productIds) {
     await assertProductsAreOwn(userId, input.productIds);
+  }
+  if (input.categoryIds) {
+    await assertCategoriesAreOwn(userId, input.categoryIds);
   }
 
   // A code the store team blocked is theirs to release. Waking it from this
