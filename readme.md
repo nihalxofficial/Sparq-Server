@@ -291,7 +291,10 @@ POST   /api/coupons/validate        🔐  Validate coupon code
 
 A vendor's code belongs to the shop. The seller's own coupons desk can create,
 edit, stop and delete it; the store team's moderation can only **block (stop)**
-or **unblock** a seller's code — never delete it.
+or **unblock** a seller's code — never delete it. Who pays for a discount: an
+**admin** coupon is borne by the store, so the seller still receives their full
+subtotal; a **vendor's own** coupon is deducted from that seller's order total,
+so the seller bears it.
 
 #### Featured Promotions (Admin)
 
