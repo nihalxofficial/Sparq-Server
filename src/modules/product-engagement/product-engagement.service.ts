@@ -48,11 +48,19 @@ export async function recordEngagement(
   const id = asObjectId(productId);
   if (!id) throw new ApiError(404, "Product not found");
 
-  const product = await Product.findById(id).select("vendorId").lean();
+  const product = await Product.findById(id).select("vendorId ownerId").lean();
   if (!product) throw new ApiError(404, "Product not found");
 
-  const vendorId = (product as any).vendorId ? asObjectId(String((product as any).vendorId)) : null;
-  if (vendorId && viewerId && String(vendorId) === String(viewerId)) {
+  // The owner of a listing is not interest in it. Both forms are dropped: the
+  // seller who listed it (vendorId) and the store account that owns it
+  // (ownerId, for a product the platform itself sells).
+  const vendorId = (product as any).vendorId
+    ? asObjectId(String((product as any).vendorId))
+    : null;
+  const owners = [(product as any).vendorId, (product as any).ownerId]
+    .filter(Boolean)
+    .map((owner) => String(owner));
+  if (viewerId && owners.includes(String(viewerId))) {
     return { counted: false };
   }
 

@@ -21,7 +21,14 @@ export const trackEngagement = catchAsync(async (req, res) => {
     ? (raw as EngagementType)
     : "view";
 
-  const result = await recordEngagement(String(req.params.productId), type, req.user?.id);
+  // A beacon carries no Authorization header, so the client sends the id it is
+  // signed in as in the body; a verified token still wins when one is present.
+  // The id only decides whether to count, never a privileged action.
+  const bodyViewer = (req.body as { viewerId?: unknown })?.viewerId;
+  const viewerId =
+    req.user?.id || (typeof bodyViewer === "string" && bodyViewer ? bodyViewer : undefined);
+
+  const result = await recordEngagement(String(req.params.productId), type, viewerId);
   apiResponse(res, 201, result, result.counted ? "Recorded" : "Own listing — not counted");
 });
 
