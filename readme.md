@@ -953,6 +953,13 @@ armed only when `VERCEL` is unset, so the jobs never run twice.
 
 - Suspended accounts are refused at the API, not only in the interface, and a
   session token past its `expiresAt` no longer authenticates.
+- Suspending an account cascades to the seller/rider side: the seller's shop is
+  set to `suspended` (its listings drop off the storefront, the product page
+  404s, and checkout refuses its lines), the vendor and rider dashboards are
+  parked, and the rider is set offline. Reactivating releases only what the
+  suspension parked — a shop or dashboard the team closed for its own reason is
+  left as they left it. A seller's suspended shop is filtered out of the public
+  catalogue within a short cache window (~15s).
 - Scheduled HTTP routes require `CRON_SECRET`; the `x-vercel-cron` header is not
   trusted on its own.
 - The delivery fee is re-derived on the server — a request cannot post
