@@ -5,6 +5,7 @@ import { Wishlist } from "../wishlist/wishlist.model";
 import { Address } from "../address/address.model";
 import { ProductReview } from "../review/review.model";
 import { VendorApplication } from "../vendor/vendor-application.model";
+import { VendorStore } from "../vendor/vendor-store.model";
 import { RiderApplication } from "../rider/rider-application.model";
 import { ApiError } from "../../utils/apiError";
 import {
@@ -58,7 +59,71 @@ export async function getUserById(id: string) {
  * list so nothing invalid can slip in through the array. A self-service call
  * never carries those keys — the controller strips them first.
  */
+/** The marker that says a parked dashboard or shop came from an account suspension. */
+const ACCOUNT_SUSPENSION_REASON = "Account suspended";
+
+/**
+ * Carries an account suspension down to the seller and rider side.
+ *
+ * Suspending the whole account has to reach the things the person was doing in
+ * it, not just the sign-in: the seller's shop comes off sale, the rider stops
+ * being offered work, and both dashboards are parked the same way a per-role
+ * suspension parks them. Reactivating releases only what this cascade parked —
+ * a dashboard or shop the store team suspended for its own reason is left
+ * exactly as the team left it.
+ */
+async function applyAccountStatusCascade(userId: string, suspended: boolean) {
+  const user: any = await User.findById(userId);
+  if (!user) return;
+
+  const roles = normalizeRoles(user.roles);
+  const rows: any[] = Array.isArray(user.roleSuspensions) ? [...user.roleSuspensions] : [];
+
+  if (suspended) {
+    const parked = new Set(rows.map((row) => normalizeRole(row?.role)));
+    for (const role of ["vendor", "rider"]) {
+      if (roles.includes(role) && !parked.has(role)) {
+        rows.push({ role, reason: ACCOUNT_SUSPENSION_REASON, suspendedAt: new Date() });
+      }
+    }
+    user.roleSuspensions = rows;
+
+    if (["vendor", "rider"].includes(normalizeRole(user.activeRole))) {
+      user.activeRole = "customer";
+      user.role = "customer";
+    }
+    if (roles.includes("rider")) user.availability = "offline";
+    await user.save();
+
+    await VendorStore.updateOne(
+      { userId: user._id },
+      {
+        $set: {
+          status: "suspended",
+          suspendedReason: ACCOUNT_SUSPENSION_REASON,
+          suspendedAt: new Date(),
+        },
+      }
+    );
+    return;
+  }
+
+  // Reactivating: release only the parking and the shop this cascade applied.
+  user.roleSuspensions = rows.filter(
+    (row) => (row?.reason || "") !== ACCOUNT_SUSPENSION_REASON
+  );
+  await user.save();
+
+  await VendorStore.updateOne(
+    { userId: user._id, status: "suspended", suspendedReason: ACCOUNT_SUSPENSION_REASON },
+    { $set: { status: "active", suspendedReason: "", suspendedAt: null } }
+  );
+}
+
 export async function updateUser(id: string, data: UpdateUserInput) {
+  const before: any = await User.findById(id).select("status").lean();
+  if (!before) throw new ApiError(404, "User not found");
+
   if (data.points !== undefined && data.member === undefined) {
     data.member = getMembershipTier(data.points);
   }
@@ -74,6 +139,13 @@ export async function updateUser(id: string, data: UpdateUserInput) {
 
   const user = await User.findByIdAndUpdate(id, patch, { new: true });
   if (!user) throw new ApiError(404, "User not found");
+
+  // A status change reaches the seller/rider side; the rest of an update does not.
+  if (data.status && data.status !== before.status) {
+    await applyAccountStatusCascade(id, data.status === "suspended");
+    return User.findById(id);
+  }
+
   return user;
 }
 
