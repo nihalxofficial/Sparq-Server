@@ -66,11 +66,6 @@ export const updateOrderStatusSchema = z.object({
   orderStatus: z.enum(["confirmed", "processing", "shipped", "delivered", "cancelled"]),
 });
 
-export const customerResponseSchema = z.object({
-  response: z.enum(["received", "not_received", "cancelled"]),
-  note: z.string().optional(),
-});
-
 export const getOrdersQuerySchema = z.object({
   userId: z.string().optional(),
   status: z.string().optional(),
@@ -87,5 +82,4 @@ export const getOrdersQuerySchema = z.object({
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusSchema>;
-export type CustomerResponseInput = z.infer<typeof customerResponseSchema>;
 export type GetOrdersQuery = z.infer<typeof getOrdersQuerySchema>;
