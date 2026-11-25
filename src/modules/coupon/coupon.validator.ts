@@ -56,7 +56,7 @@ const couponFields = {
   perCustomerLimit: z.coerce.number().int().min(0),
 
   /** Empty means every product the owner may discount. */
-  productIds: z.array(objectId).max(100),
+  productIds: z.array(objectId).max(1000),
   categoryIds: z.array(objectId).max(50),
 
   isActive: z.boolean(),

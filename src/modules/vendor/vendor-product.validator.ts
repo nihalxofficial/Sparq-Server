@@ -96,7 +96,7 @@ export const vendorProductQuerySchema = z.object({
   stock: z.enum(["all", "in", "out"]).optional().default("all"),
   sort: z.enum(["newest", "oldest", "price_asc", "price_desc"]).optional().default("newest"),
   page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  limit: z.coerce.number().int().positive().max(1000).default(20),
 });
 
 export type CreateVendorProductInput = z.infer<typeof createVendorProductSchema>;
