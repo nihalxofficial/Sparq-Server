@@ -303,16 +303,33 @@ export async function stopCoupon(id: string, vendorId?: string, mode: "inactive"
 }
 
 /**
- * The store team's control over a seller's code: remove it.
- *
- * The desk does not stop or re-price a seller's code — a seller owns their
- * codes. It can delete one it judges misleading, and the seller is told why.
+ * The store team's control over a seller's code: stop it, or put it back.
+ * The desk never deletes a seller's code — that belongs to the seller. The
+ * reason and the moment are written on the row so the seller can see why their
+ * code went quiet, and unblocking skips the seller's plan allowance on purpose.
  */
-export async function moderateCoupon(id: string) {
+export async function moderateCoupon(
+  id: string,
+  input: { action: "block" | "unblock"; reason?: string },
+  adminId?: string
+) {
   const row = await requireCoupon(id);
-  const coupon = toCouponDto(row.toObject());
-  await Coupon.deleteOne({ _id: row._id });
-  return { coupon, deleted: true };
+
+  if (input.action === "unblock") {
+    row.isActive = true;
+    row.blockedReason = "";
+    row.blockedAt = null;
+    row.blockedBy = null;
+    await row.save();
+    return { coupon: toCouponDto(row.toObject()), blocked: false };
+  }
+
+  row.isActive = false;
+  row.blockedReason = (input.reason || "").trim() || "Stopped by the store team";
+  row.blockedAt = new Date();
+  row.blockedBy = adminId ? new Types.ObjectId(adminId) : null;
+  await row.save();
+  return { coupon: toCouponDto(row.toObject()), blocked: true };
 }
 
 /**

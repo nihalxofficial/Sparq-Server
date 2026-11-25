@@ -26,8 +26,8 @@ router.get("/", controller.getCoupons);
 router.post("/", validate(createCouponSchema), controller.createCoupon);
 router.get("/:id", controller.getCoupon);
 router.patch("/:id", validate(updateCouponSchema), controller.updateCoupon);
-// A seller's code can only be removed from here — the store team never edits or
-// stops one; it deletes a misleading code and the seller is notified.
+// A seller's code can only be stopped or put back from here — the store team
+// never edits or deletes one; the row records who acted and why.
 router.patch("/:id/moderate", validate(moderateCouponSchema), controller.moderateCoupon);
 router.delete("/:id", controller.deleteCoupon);
 

@@ -165,14 +165,11 @@ export const validateCouponSchema = z.object({
 });
 
 /**
- * The store team's one write on a seller's code: delete it.
- *
- * A seller owns their codes, so the desk does not stop or re-price one — it can
- * only remove a code it judges misleading. The reason (optional) is carried in
- * the notification the seller receives.
+ * The store team's one write on a seller's code: stop it, or put it back.
+ * The desk never deletes a seller's code — the seller can do that themselves.
  */
 export const moderateCouponSchema = z.object({
-  action: z.literal("delete"),
+  action: z.enum(["block", "unblock"]),
   reason: z.string().trim().max(200).optional().default(""),
 });
 
