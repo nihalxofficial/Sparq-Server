@@ -497,6 +497,73 @@ export async function getRiderDelivery(riderId: string, id: string) {
   const total = Number(order.totalAmount || 0);
   const paymentMethod = order.paymentMethod || "cod";
 
+  /*
+   * Group the lines by the shop that owns them, so the rider reads "collect
+   * these from this warehouse" one seller at a time. Lines the store itself
+   * sold (no store) are grouped under the admin desk's warehouse.
+   */
+  const itemList = (order.items || []) as any[];
+  const byStore = new Map<string, any[]>();
+  const platformItems: any[] = [];
+
+  for (const item of itemList) {
+    const storeId = item.storeId ? String(item.storeId) : "";
+    if (storeId) {
+      const list = byStore.get(storeId) || [];
+      list.push(item);
+      byStore.set(storeId, list);
+    } else {
+      platformItems.push(item);
+    }
+  }
+
+  const storeRows = byStore.size
+    ? await VendorStore.find({ _id: { $in: [...byStore.keys()] } })
+        .select("name phone address warehouse")
+        .lean()
+    : [];
+  const storeById = new Map(storeRows.map((store: any) => [String(store._id), store]));
+
+  const shapeItem = (item: any) => ({
+    title: item.title || "Item",
+    quantity: Number(item.quantity || 0),
+    price: Number(item.price || 0),
+    image: item.image || "",
+  });
+
+  const ownerGroups = [...byStore.entries()].map(([storeId, items]) => {
+    const store: any = storeById.get(storeId);
+    const stock = store && hasWarehouse(store.warehouse) ? store.warehouse : null;
+    return {
+      ownerName: store?.name || "Sparq seller",
+      warehouse: {
+        label: stock?.label || "",
+        address: stock ? stock.address || "" : store?.address?.address || "",
+        city: stock ? stock.city || "" : store?.address?.city || "",
+        area: stock ? stock.area || "" : store?.address?.area || "",
+        postalCode: stock ? stock.postalCode || "" : store?.address?.postalCode || "",
+        phone: (stock ? stock.phone : store?.phone) || "",
+      },
+      items: items.map(shapeItem),
+    };
+  });
+
+  if (platformItems.length > 0) {
+    ownerGroups.push({
+      ownerName: "Store (admin desk)",
+      warehouse: {
+        label: "Store warehouse",
+        address:
+          warehouseLines(team?.warehouse).join(", ") || settings?.address || "",
+        city: "",
+        area: "",
+        postalCode: "",
+        phone: team?.warehouse?.phone || settings?.supportPhone || "",
+      },
+      items: platformItems.map(shapeItem),
+    });
+  }
+
   return {
     ...dto,
     order: {
@@ -541,6 +608,8 @@ export async function getRiderDelivery(riderId: string, id: string) {
       currency: settings?.currency || "USD",
       /** Every shop's collection point; a multi-seller parcel has more than one. */
       warehouses: shops,
+      /** The lines grouped by the shop that owns them, each with its warehouse. */
+      groups: ownerGroups,
     },
   };
 }
