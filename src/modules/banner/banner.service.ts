@@ -60,12 +60,22 @@ function shapeBanner(banner: any) {
       vendorId: idOf(banner.vendorId),
       customUrl: banner.customUrl || "",
     },
+    // Only a product banner carries live pricing; the rest show artwork alone.
+    product:
+      banner.type === "product" && banner.productId?.slug
+        ? {
+            id: idOf(banner.productId),
+            price: banner.productId.price ?? 0,
+            originalPrice: banner.productId.originalPrice ?? null,
+            offerEndDate: banner.productId.offerEndDate ?? null,
+          }
+        : null,
     href,
   };
 }
 
 const POPULATE = [
-  { path: "productId", select: "slug" },
+  { path: "productId", select: "slug price originalPrice offerEndDate" },
   { path: "categoryId", select: "slug" },
   { path: "vendorId", select: "slug" },
 ];
