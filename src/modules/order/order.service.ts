@@ -900,9 +900,9 @@ export async function updateOrderStatus(
   /**
    * Who is behind this change, and what that lets it past the two closing gates.
    *
-   * `byRider` is the code read at the door. `byCustomer` is the customer saying
-   * the parcel arrived, which is the same fact from the other side of the
-   * counter. Both are confirmations of a hand-over, so neither is held back by a
+   * `byRider` is the code read at the door. `byCustomer` is the buyer acting on
+   * their own order — calling it off before it leaves the store. Each is the
+   * person on the counter answering for the parcel, so neither is held back by a
    * rider still carrying the job or by an older report from the buyer; an admin
    * changing the stage gets neither, and has to deal with whoever is on the job.
    */
@@ -1049,7 +1049,7 @@ export async function updateOrderStatus(
               status: "cancelled",
               at: new Date(),
               note:
-                order.customerResponse === "cancelled"
+                options.byCustomer || order.customerResponse === "cancelled"
                   ? "Order cancelled by the customer"
                   : "Order cancelled by the store",
               by: changedBy ?? null,
