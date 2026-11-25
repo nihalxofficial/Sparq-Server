@@ -1,12 +1,11 @@
-<div align="center">
+﻿<div align="center">
 
 # ⚡ Sparq Server
 
-**REST API for E-Commerce Platform**
+**REST API for the Sparq marketplace**
 
-Express 5 + MongoDB backend powering a multi-vendor marketplace with loyalty points, rider delivery and GPS tracking, discount codes, paid placements, and a CMS
+Express 5 + MongoDB backend powering a multi-vendor store with loyalty points, rider delivery, discount codes, paid placements, and a CMS.
 
-[![API Status](https://img.shields.io/badge/API-Running-success?style=flat-square)](https://sparq-api.vercel.app)
 [![Backend](https://img.shields.io/badge/Backend-Express_5-green?style=flat-square&logo=express)](https://github.com/demoprojectbdsoft/Sparq-Server)
 [![Frontend](https://img.shields.io/badge/Frontend-Next.js-black?style=flat-square&logo=next.js)](https://github.com/demoprojectbdsoft/Sparq-Electronics-Store)
 
@@ -18,467 +17,98 @@ Express 5 + MongoDB backend powering a multi-vendor marketplace with loyalty poi
 
 1. [What This Server Does](#what-this-server-does)
 2. [Architecture](#architecture)
-3. [API Reference](#api-reference)
+3. [Access & Security](#access--security)
 4. [Business Logic](#business-logic)
-5. [Implementation Status](#implementation-status)
-6. [Recent Changes](#recent-changes)
-7. [Demo Admin Mode](#demo-admin-mode)
-8. [Tech Stack](#tech-stack)
-9. [Quick Start](#quick-start)
-10. [Project Structure](#project-structure)
-11. [Environment Setup](#environment-setup)
-12. [Deployment](#deployment)
-13. [Development](#development)
+5. [Scheduled Jobs](#scheduled-jobs)
+6. [Demo Admin Mode](#demo-admin-mode)
+7. [Tech Stack](#tech-stack)
+8. [Quick Start](#quick-start)
+9. [Environment Setup](#environment-setup)
+10. [Deployment](#deployment)
+11. [Development](#development)
+12. [Support & Links](#support--links)
 
 ---
 
 ## What This Server Does
 
-This is the backend API for [Sparq](https://github.com/demoprojectbdsoft/Sparq-Electronics-Store). It handles **all business logic and data**, while the Next.js frontend owns authentication.
+The backend API for [Sparq](https://github.com/demoprojectbdsoft/Sparq-Electronics-Store). It owns **all business logic and data**; the Next.js frontend owns authentication.
 
-### What This API Owns
+**What this API owns**
 
-```
-✅ Business Rules         All prices, discounts, totals computed server-side
-✅ Authorization          Session/JWT verification, role guards, ownership checks
-✅ Data Integrity         Transactional operations (orders, points, stock)
-✅ Scheduled Jobs         Demo restore, delivery offers, vendor periods, placements, daily rates, seller timeout
-✅ Email Delivery         SMTP emails for orders and password resets
-✅ Document Storage       Applicant uploads, kept behind a signed link
-```
+- **Business rules** — all prices, discounts and totals computed server-side.
+- **Authorization** — session/JWT verification, role guards, ownership checks.
+- **Data integrity** — transactional operations (orders, points, stock).
+- **Scheduled jobs** — one daily sweep for restores, expiries, rates and timeouts.
+- **Email** — SMTP messages for orders, reviews, applications and resets.
+- **Document storage** — applicant uploads, kept behind a signed link.
 
-### What This API Does NOT Own
+**What this API does not own**
 
-```
-❌ Authentication         Sign-up/login handled by better-auth (frontend)
-❌ JWT Generation         Tokens created by frontend, only verified here
-❌ Session Storage        Sessions stored by frontend in MongoDB
-```
+- **Authentication** — sign-up/login is handled by better-auth (frontend).
+- **JWT generation** — tokens are created by the frontend and only verified here.
+- **Session storage** — sessions are stored by the frontend in the shared MongoDB.
 
-### Request Flow
+**Request flow**
 
 ```
-Client Request → JWT Verification → Role Check → Validation → Controller → Service → Database
-                      ↓                  ↓            ↓
-                    401 (invalid)    403 (denied)  400 (bad data)
+Request -> verify JWT -> check role -> validate (Zod) -> controller -> service -> database
+              |              |              |
+             401            403            400
 ```
 
 ---
 
 ## Architecture
 
-### Layered Design
+**Layered design.** Every module follows the same five files:
 
-Every module follows the same 5-layer pattern:
+| File | Responsibility |
+|------|----------------|
+| `route.ts` | Maps URL to controller; attaches auth / role / validation. |
+| `validator.ts` | Zod schema — rejects bad input early. |
+| `controller.ts` | Reads the request, calls the service, sends the response. |
+| `service.ts` | Business logic and database operations. |
+| `model.ts` | Mongoose schema, enums, defaults and indexes. |
 
-```
-route.ts         Maps URL to controller, attaches auth/role middleware
-    ↓
-validator.ts     Zod schema validates request (rejects bad input early)
-    ↓
-controller.ts    Reads request, calls service, sends response
-    ↓
-service.ts       Business logic + database operations
-    ↓
-model.ts         Mongoose schema (data structure)
-```
+A module adds a sixth file when one would grow unreviewable (e.g. `vendor-order.create.ts` beside `vendor-order.service.ts`). The dependency direction is deliberate: the listing service imports the order service, so the order module never imports the listing service back.
 
-### Module Organization
-
-```
-modules/
-├── product/
-│   ├── product.model.ts         Mongoose schema
-│   ├── product.service.ts       Business logic
-│   ├── product.controller.ts    HTTP handlers
-│   ├── product.validator.ts     Zod validation
-│   ├── product.route.ts         Express routes
-│   └── product.types.ts         TypeScript types
-│
-├── order/                       Order processing
-├── user/                        User management
-├── vendor/                      Multi-vendor marketplace
-├── delivery/                    Riders, jobs, GPS tracking
-├── coupon/                      Discount codes
-└── ...                          the remaining modules
-```
-
-### Middleware Pipeline
+**Middleware pipeline**
 
 ```
 Request
-   │
-   ├─ requireAuth?          Verifies JWT via JWKS
-   │  ├─ Valid    → Continue
-   │  └─ Invalid  → 401
-   │
-   ├─ requireRole?          Checks user has required role
-   │  ├─ Has role → Continue
-   │  └─ No role  → 403
-   │
-   ├─ validate?             Zod schema validation
-   │  ├─ Valid    → Continue
-   │  └─ Invalid  → 400
-   │
-   └─ Controller → Service → Database → Response
+   |- CORS                allow only the storefront's origins
+   |- body parsing        JSON; the file route accepts 12 MB
+   |- requireAuth?        verify token -> 401 if bad, expired or suspended
+   |- requireRole?        check approved roles -> 403 if missing
+   |- validate?           Zod schema -> 400 on bad data
+   +- Controller -> Service -> Database -> Response
 ```
+
+**Modules.** 38 route modules grouped by domain: identity (user, address, file, mail, activity), catalogue (category, subcategory, product, product-engagement, review), shopping (cart, wishlist, order, order-status, transaction, coupon), delivery (delivery, rider), the vendor family (application, store, product, order, plan, subscription, coupon, promotion, analytics, desk, admin), marketing and platform (banner, promo, promotion, contact, message, site-settings, currency, demo) and cron (the daily sweep).
+
+For the full route-by-route reference, see the HTML documentation in `/documentation`.
 
 ---
 
-## API Reference
-
-**Base URL**: `/api`  
-**Response Format**: `{ success: boolean, message: string, data?: any }`
-
-### Access Levels
-
-- 🌐 **Public** - No auth required
-- 🔐 **Bearer** - Valid JWT token required
-- 👑 **Admin** - Admin or demo admin role required
-- ⏰ **Cron** - Bearer `CRON_SECRET` required (the `x-vercel-cron` header alone is not trusted)
-- 🔑 **Internal** - INTERNAL_API_KEY required (frontend only)
-
----
-
-### Core Endpoints
-
-#### Health Check
-
-```
-GET  /api               🌐  Server status
-GET  /                  🌐  Root health check
-```
-
-#### Categories, Subcategories & Products
-
-```
-GET    /api/categories                 🌐  List categories
-POST   /api/categories                 👑  Create category
-PATCH  /api/categories/:id             👑  Update category
-DELETE /api/categories/:id             👑  Delete category
-
-GET    /api/subcategories              🌐  List subcategories
-POST   /api/subcategories              👑  Create subcategory
-PATCH  /api/subcategories/:id          👑  Update subcategory
-DELETE /api/subcategories/:id          👑  Delete subcategory
-
-GET    /api/products                   🌐  Search & filter products
-GET    /api/products/:slug             🌐  Get one product
-POST   /api/products                   👑  Create product
-PATCH  /api/products/:id               👑  Update product
-PATCH  /api/products/:id/review        👑  Approve or reject a seller listing
-PATCH  /api/products/:id/archive       👑  Archive product
-PATCH  /api/products/:id/unarchive     👑  Restore archived product
-DELETE /api/products/:id               👑  Delete product
-GET    /api/products/expire            ⏰  Turn lapsed offers back to full price
-
-GET    /api/engagement/products        👑  Views & favourites report
-POST   /api/engagement/products/:id    🌐  Track a product view
-```
-
-**Product query params:** `search`, `category`/`categoryId`,
-`subCategory`/`subCategoryId`, `storeSlug`/`storeId`, `minPrice`, `maxPrice`,
-`minDiscount`, `maxDiscount`, `discount` (`0-20` band), `isFeatured`, `inStock`,
-`hasOffer`, `minRating`, `vendorStatus` (admin desk only), `mode=admin`,
-`page`, `limit`.
-
-**Search** matches title, description and SKU.
-**Sort keys:** `newest`, `oldest`, `price_asc`, `price_desc`, `rating`,
-`sellCount`, `featured`.
-
-#### Shopping Cart & Wishlist
-
-```
-GET    /api/cart                    🔐  Get user's cart
-GET    /api/cart/is-carted          🔐  Check if product in cart
-POST   /api/cart                    🔐  Add to cart
-PATCH  /api/cart/:productId         🔐  Update quantity
-DELETE /api/cart                    🔐  Clear cart
-DELETE /api/cart/:productId         🔐  Remove item
-
-GET    /api/wishlist                🔐  Get user's wishlist
-GET    /api/wishlist/is-wishlisted  🔐  Check if wishlisted
-POST   /api/wishlist                🔐  Add to wishlist
-DELETE /api/wishlist/:productId     🔐  Remove from wishlist
-```
-
-#### Orders & Checkout
-
-```
-GET    /api/orders                  🔐  List orders (customer: own, admin: all)
-GET    /api/orders/:id              🔐  Get order details
-POST   /api/orders                  🔐  Place new order
-PATCH  /api/orders/:id/status       👑  Update order status
-PATCH  /api/orders/:id/cancel       🔐  Cancel own order (before it ships)
-
-GET    /api/order-status            🔐  Get order status history
-GET    /api/transactions            🔐  List payment records
-```
-
-**Place Order Body:**
-```json
-{
-  "items": [{ "productId": "...", "quantity": 2 }],
-  "shippingAddress": {
-    "fullName": "John Doe",
-    "phone": "+8801712345678",
-    "address": "123 Main St",
-    "city": "Dhaka",
-    "postalCode": "1000"
-  },
-  "paymentMethod": "cod",
-  "transactionId": "TXN123",
-  "pointsToRedeem": 100,
-  "couponCode": "SAVE10",
-  "shippingMethod": "standard"
-}
-```
-
-`paymentMethod` is `cod | bkash | rocket | nagad`; `transactionId` is required for
-anything except cash on delivery. `shippingMethod` is `free | standard | express`,
-and a `free` request is re-checked on the server against the live free-shipping
-threshold rather than trusted.
-
-#### Reviews
-
-```
-GET    /api/reviews                 🌐  List reviews (filterable)
-GET    /api/reviews/vendor          Vendor  Reviews on the seller's own listings
-POST   /api/reviews                 🔐  Create review (needs a delivered order)
-PATCH  /api/reviews/:id             🔐  Edit own review
-DELETE /api/reviews/:id             🔐  Delete (reviewer, product seller or admin)
-```
-
-#### Warranties
-
-Warranty is **product vocabulary only** in this build — there is no claim
-workflow or warranty API yet. A product carries `warrantyType`
-(`manufacturer-warranty`, `seller-warranty`, `extended-warranty`, `other`,
-`none`), `warrantyPeriodMonths` and `warrantyTerms`, and the product page renders
-them. The same list is mirrored in the storefront at `sparq/src/lib/warranty.ts`.
-
-#### Users & Addresses
-
-```
-GET    /api/users                   👑  List all users
-GET    /api/users/me/roles          🔐  Get own roles
-GET    /api/users/me/export         🔐  Export own data (JSON)
-PATCH  /api/users/me/active-role    🔐  Switch active role
-GET    /api/users/:id               🔐  Get user (owner or admin)
-PATCH  /api/users/:id               🔐  Update user
-POST   /api/users/:id/roles         👑  Set user's roles
-PATCH  /api/users/:id/roles/revoke  👑  Revoke one role
-PATCH  /api/users/:id/roles/suspension  👑  Suspend/unsuspend role
-DELETE /api/users/:id               👑  Delete user
-
-GET    /api/addresses               🔐  List saved addresses
-POST   /api/addresses               🔐  Add address
-PATCH  /api/addresses/:id           🔐  Update address
-PATCH  /api/addresses/:id/default   🔐  Set as default
-DELETE /api/addresses/:id           🔐  Delete address
-```
-
-#### Coupons (Store-Wide)
-
-```
-GET    /api/coupons                 👑  List all coupons
-GET    /api/coupons/:id             👑  Get coupon details
-POST   /api/coupons                 👑  Create store coupon
-PATCH  /api/coupons/:id             👑  Update store coupon
-DELETE /api/coupons/:id             👑  Delete store coupon
-PATCH  /api/coupons/:id/moderate    👑  Stop or resume a vendor's code
-POST   /api/coupons/validate        🔐  Validate coupon code
-```
-
-A vendor's code belongs to the shop. The seller's own coupons desk can create,
-edit, stop and delete it; the store team's moderation can only **block (stop)**
-or **unblock** a seller's code — never delete it. Who pays for a discount: an
-**admin** coupon is borne by the store, so the seller still receives their full
-subtotal; a **vendor's own** coupon is deducted from that seller's order total,
-so the seller bears it.
-
-#### Featured Promotions (Admin)
-
-```
-GET    /api/promotions              👑  List featured placements
-POST   /api/promotions              👑  Grant featured placement
-DELETE /api/promotions/:id          👑  End placement early
-GET    /api/promotions/expire       ⏰  Daily cleanup job
-```
-
-#### Vendor Marketplace
-
-```
-# Applications
-POST   /api/vendor-applications              🔐  Submit application
-GET    /api/vendor-applications/mine         🔐  Get own applications
-POST   /api/vendor-applications/mine/cancel  🔐  Withdraw application
-GET    /api/vendor-applications              👑  List all (admin)
-PATCH  /api/vendor-applications/:id/review   👑  Approve/reject
-
-# Stores
-GET    /api/vendor-store/public              🌐  List trading stores
-GET    /api/vendor-store/public/:slug        🌐  Get store by slug
-GET    /api/vendor-store                     👑  List all (admin)
-GET    /api/vendor-store/mine                Vendor  Get own store
-PATCH  /api/vendor-store/mine                Vendor  Update own store
-
-# Vendor Products
-GET    /api/vendor-products                  Vendor  List own products
-POST   /api/vendor-products                  Vendor  Create product
-PATCH  /api/vendor-products/:id              Vendor  Update product
-DELETE /api/vendor-products/:id              Vendor  Archive product
-
-# Vendor Orders
-GET    /api/vendor-orders                    Vendor  List fulfillment groups
-GET    /api/vendor-orders/summary            Vendor  Order counts
-PATCH  /api/vendor-orders/:id/status         Vendor  Update status
-GET    /api/vendor-orders/expire             ⏰  Reject groups unanswered for 24h
-
-# Vendor Subscription
-GET    /api/vendor-subscription/mine         Vendor  Get subscription
-POST   /api/vendor-subscription/checkout     Vendor  Subscribe to plan
-POST   /api/vendor-subscription/cancel-renewal  Vendor  Turn off auto-renew
-GET    /api/vendor-subscription/expire       ⏰  Daily cleanup
-
-# Vendor Coupons
-GET    /api/vendor-coupons                   Vendor  List own coupons
-POST   /api/vendor-coupons                   Vendor  Create coupon
-PATCH  /api/vendor-coupons/:id               Vendor  Update coupon
-DELETE /api/vendor-coupons/:id               Vendor  Delete coupon
-
-# Vendor Promotions
-GET    /api/vendor-promotions                Vendor  List own placements
-POST   /api/vendor-promotions                Vendor  Buy featured slot
-DELETE /api/vendor-promotions/:id            Vendor  End placement early
-
-# Vendor Analytics
-GET    /api/vendor-analytics?range=7|30|90|365  Vendor  Sales report
-```
-
-#### Delivery & Riders
-
-```
-# Store team
-GET    /api/deliveries/admin/order/:orderId  👑  Jobs for one order
-GET    /api/deliveries/admin/overview        👑  Delivery board summary
-GET    /api/deliveries/admin/riders          👑  Riders available to assign
-GET    /api/deliveries/admin/payouts         👑  What each rider was paid
-GET    /api/deliveries/admin                 👑  All deliveries
-POST   /api/deliveries                       👑  Offer an order to a rider
-PATCH  /api/deliveries/:id/reassign          👑  Hand a job to another rider
-PATCH  /api/deliveries/:id/cancel            👑  Stop a job
-GET    /api/deliveries/expire                ⏰  Close offers nobody answered
-
-# Customer tracking
-GET    /api/deliveries/tracking/:orderId       🔐  Live tracking + ETA
-GET    /api/deliveries/tracking/:orderId/code  🔐  Read the door code
-POST   /api/deliveries/tracking/:orderId/code  🔐  Regenerate the door code
-
-# Rider (role: rider)
-GET    /api/deliveries              Rider  Own jobs
-GET    /api/deliveries/stats        Rider  Own figures
-GET    /api/deliveries/:id          Rider  One job and the order behind it
-GET    /api/deliveries/:id/invoice  Rider  Invoice for one job
-POST   /api/deliveries/:id/accept   Rider  Accept an offer
-POST   /api/deliveries/:id/decline  Rider  Decline an offer with a reason
-PATCH  /api/deliveries/:id/status   Rider  picked_up → out_for_delivery
-POST   /api/deliveries/:id/complete Rider  Close the job with the door code
-POST   /api/deliveries/:id/location Rider  Share one position ping
-```
-
-#### Rider Applications
-
-```
-POST   /api/rider-applications             🔐  Submit or resubmit application
-GET    /api/rider-applications/mine        🔐  Own application
-PATCH  /api/rider-applications/mine        🔐  Update own file
-POST   /api/rider-applications/mine/cancel 🔐  Withdraw application
-GET    /api/rider-applications             👑  List all (admin)
-GET    /api/rider-applications/:id         👑  One application
-PATCH  /api/rider-applications/:id/review  👑  Approve or reject
-POST   /api/rider-applications/status      🔑  Status lookup after login
-```
-
-#### Vendor Plans, Desk & Board
-
-```
-GET    /api/vendor-plans           🌐  Price list
-POST   /api/vendor-plans           👑  Create plan
-PATCH  /api/vendor-plans/:planId   👑  Update plan
-DELETE /api/vendor-plans/:planId   👑  Remove plan
-
-GET    /api/vendor-desk            👑  Seller money board
-GET    /api/vendor-admin           👑  Seller board (every shop)
-GET    /api/vendor-admin/:id       👑  One seller's board
-GET    /api/transactions/vendor    Vendor  Own payment rows
-```
-
-#### Hero Banners & Promos
-
-```
-GET    /api/banners        🌐  Eligible homepage banners (published, in window)
-GET    /api/banners/admin  👑  Every banner, drafts and past ones
-POST   /api/banners        👑  Create banner
-PATCH  /api/banners/:id    👑  Update banner
-DELETE /api/banners/:id    👑  Delete banner
-
-GET    /api/promos      🌐  List promo banners
-POST   /api/promos      👑  Create promo
-PATCH  /api/promos/:id  👑  Update promo
-DELETE /api/promos/:id  👑  Delete promo
-```
-
-A banner is a picture and a destination. Its `type` — `product`, `category`,
-`vendor` or `custom` — decides the target, and the API resolves the public link
-at read time. The homepage read returns only banners that are published and
-inside their date window, and skips any whose product, category or shop has
-since been removed. Status (draft / scheduled / active / expired) is derived
-from the publish switch and the dates, never stored. A `product` banner's read
-also carries the linked product's `price`, `originalPrice` and `offerEndDate`,
-so the hero can show the live deal without a second request. Image URLs are
-stored exactly as uploaded (the storefront hosts them on ImgBB); the server
-never re-hosts artwork.
-
-#### Files
-
-```
-POST   /api/files            🔑  Upload a document (frontend only)
-GET    /api/files/:id/:name  🔐  Read one (signed link, or a staff token)
-GET    /api/files/:id        🔐  Same, without the filename
-```
-
-#### Currency
-
-```
-GET    /api/currency/refresh  ⏰  Pull the day's exchange rates (cron or admin)
-```
-
-The shop prices in one currency. The daily job pulls the day's rates from a free
-provider and stores them on the site settings; the storefront uses them only to
-**convert a price for display** (see the storefront README). A failed fetch is
-never written, so the last good table stays until the next run.
-
-#### Site Settings & Support
-
-```
-GET    /api/site-settings           🌐  Get store configuration
-PATCH  /api/site-settings           👑  Update settings
-
-POST   /api/contact                 🌐  Submit contact form
-GET    /api/messages                👑  List contact messages
-POST   /api/messages/:id/reply      👑  Reply to message
-DELETE /api/messages/:id            👑  Delete message
-
-GET    /api/activities/mine         🔐  Get notifications
-GET    /api/activities/mine/unread-count  🔐  Unread count
-PATCH  /api/activities/mine/read-all  🔐  Mark all read
-PATCH  /api/activities/mine/:id/read  🔐  Mark one read
-
-POST   /api/mail/reset-password     🔑  Send password reset email
-
-GET    /api/demo/restore            ⏰  Restore demo changes
-```
+## Access & Security
+
+**Access levels.** Every protected request needs a bearer token; ownership is still checked inside the service.
+
+| Level | Who |
+|-------|-----|
+| **Public** | No token — reads only what a shopper may see. |
+| **Bearer** | A valid token; the service scopes reads to the caller. |
+| **Admin** | Approved roles include `admin` (or the demo admin). |
+| **Rider / Vendor** | That role is approved and not suspended. |
+| **Cron** | `Authorization: Bearer <CRON_SECRET>`. |
+| **Internal** | `INTERNAL_API_KEY`, called only by the storefront. |
+
+- **Verifying the caller** — a JWT is verified against the storefront's JWKS endpoint; if that fails the token is looked up as a session. An expired session, a suspended account and a missing user all end the same way: refused before any handler runs.
+- **Roles and ownership** — `requireRole` reads the approved `roles` array (never the claimed active role), and each service scopes reads to the caller.
+- **Prices are never trusted** — a request names products and quantities only; every figure is recomputed from the database.
+
+Concrete guarantees are under [Security Notes](#security-notes).
 
 ---
 
@@ -486,283 +116,137 @@ GET    /api/demo/restore            ⏰  Restore demo changes
 
 ### Multi-Role Accounts
 
-One user can hold multiple roles simultaneously:
+One account can hold several roles at once:
 
 ```
-User Account
-  ├─ roles: ["customer", "vendor", "rider"]  ← Approved roles
-  ├─ activeRole: "vendor"                    ← Current dashboard
-  └─ roleSuspensions: [                      ← Temporarily blocked
-       { role: "rider", reason: "...", suspendedAt: "..." }
-     ]
+roles: ["customer", "vendor", "rider"]    <- approved
+activeRole: "vendor"                      <- which dashboard opens
+roleSuspensions: [{ role: "rider", ... }] <- temporarily blocked
 ```
 
-**Rules:**
-- Admin authority never shares (granting admin drops other roles)
-- Customer role always included (except for admins)
-- Active role switches among approved, unsuspended roles
-- Suspended roles block dashboard but remain approved
+- Admin authority never shares — granting admin drops other roles.
+- Customer is kept on every non-admin account.
+- The active role switches among approved, unsuspended roles.
+- A suspended role stays approved but cannot be activated.
 
 ### Order Lifecycle
 
+Placing an order is one transaction:
+
+1. Load products, check stock (only live listings are orderable).
+2. Price the coupon from the database.
+3. Redeem points atomically (`findOneAndUpdate` with a `$gte` check).
+4. Recompute totals server-side.
+5. Create the order and the payment row.
+6. Decrement stock with a guard — it can never oversell.
+7. Split into vendor groups and clear the cart.
+
+All of the above land together or not at all.
+
 ```
-Place Order (Atomic Transaction)
-  1. Load products and check stock (only live listings are orderable)
-  2. Price the coupon from the database
-  3. Redeem points (atomic: findOneAndUpdate with $gte check)
-  4. Calculate totals (server-side, never trust client)
-  5. Create order + payment row
-  6. Decrement stock (guarded: $gte, so it never oversells)
-  7. Split into vendor groups, clear the cart
-     — all of the above land together or not at all
-
-Status Flow:
-  confirmed → processing → shipped → delivered
-      ↓           ↓          ↓
-      └───────────┴──────────┴────► cancelled
-
-On Delivery:
-  • Mark the payment successful (cash on delivery settles here)
-  • Credit loyalty points and re-check the tier
-  • Update sell counts
-
-On Cancellation:
-  • Fail a payment that never landed; refund one that had gone through
-  • Restore stock (a seller's rejected slice is not given back twice)
-  • Refund points spent; revoke points earned (if it was delivered)
-  • Hand the coupon's use back to the code
+confirmed -> processing -> shipped -> delivered
+    +-----------+------------+--------> cancelled
 ```
+
+- **On delivery** — settle the payment, credit points and re-check the tier, update sell counts.
+- **On cancellation** — fail an unpaid payment / refund a paid one, restore stock once, refund spent points, revoke earned points, hand the coupon's use back.
 
 ### Multi-Vendor Order Splitting
 
-When customer orders from multiple vendors:
+One customer order becomes one parent order plus one group per seller:
 
 ```
-Customer Cart → One Order (parent)
-                    ├─ VendorOrder (Vendor A items)
-                    ├─ VendorOrder (Vendor B items)
-                    └─ Platform items (no vendor group)
-
-Vendor Workflow:
-  pending → accepted → processing → ready_for_shipment → (parent ships it)
-     ↓
-  rejected (with reason)
-
-Parent Status Sync:
-  Parent "shipped" → All vendor groups become "shipped"
-  Parent "delivered" → All vendor groups become "delivered"
-  Parent "cancelled" → All vendor groups become "cancelled"
+Cart -> Order (parent)
+          |- VendorOrder (Seller A items)
+          |- VendorOrder (Seller B items)
+          +- platform items (no group)
 ```
+
+- Seller flow: `pending -> accepted -> processing -> ready_for_shipment`, or `rejected` with a reason.
+- Parent `shipped` / `delivered` / `cancelled` is pushed down to every group, with a guard list so a rejected or delivered group is never overwritten.
+- A seller's own coupon comes off their group; an admin coupon leaves every group whole.
 
 ### Loyalty Points
 
-```
-EARNING:    floor($147.50) = 147 points on delivery
-            (1 point per $1 spent, rounded down)
-
-REDEMPTION: 100 points = $1 discount
-            Minimum: 100 points
-            Maximum: Product total only (shipping always paid)
-
-ATOMIC:     findOneAndUpdate({ points: { $gte: n } }, { $inc: { points: -n } })
-            (prevents double-spending in concurrent checkouts)
-
-TIERS:      Recalculated on every balance change
-            Silver < 1,000 | Gold 1,000 | Platinum 4,000 | Diamond 10,000
-```
-
-### Warranty (vocabulary only)
-
-A product can be sold with one of five warranty codes:
-
-```
-manufacturer-warranty | seller-warranty | extended-warranty | other | none
-```
-
-The code, the period in months and a free-text terms line live on the product and
-are shown on the product page. There is **no claim, extension or expiry workflow
-in this build** — `src/modules/warranty/` holds only the shared type list, which
-the storefront mirrors in `sparq/src/lib/warranty.ts`.
+- **Earn** — 1 point per currency unit spent, rounded down, credited on delivery.
+- **Redeem** — 100 points = 1 unit of discount, capped at the product total (shipping is always paid).
+- **Atomic** — a guarded decrement prevents double-spending in concurrent checkouts.
+- **Tiers** — recalculated on every change: Silver under 1,000 · Gold under 4,000 · Platinum under 10,000 · Diamond 10,000+.
 
 ### Discount Coupons
 
-**Two Owners, One Engine:**
+**Two owners, one engine:**
 
-```
-ADMIN COUPONS                    VENDOR COUPONS
-  • Any product/category           • Only vendor's products
-  • Platform-wide                  • Shop-specific
-  • Created by admins              • Created by vendors (plan limited)
+| | Admin coupon | Vendor coupon |
+|---|---|---|
+| Scope | Any product or category | Only the shop's products |
+| Created by | Admins | Vendors (plan-limited) |
+| Discount borne by | The store | The seller |
 
-Both Support:
-  • Percentage (1-100%) or Fixed
-  • Optional: productIds, categoryIds, minOrderAmount, maxDiscountAmount
-  • Usage limits: total & per-customer
-  • Date range with auto-expiry
-```
+Both support percentage or fixed amounts, optional product/category scope, a minimum order, a maximum discount, total and per-customer limits, and a date range.
 
-**Validation:**
-```javascript
-// Server always recalculates
-const eligibleItems = cart.items.filter(item => {
-  if (coupon.ownerType === 'vendor' && item.vendorId !== coupon.vendorId) {
-    return false;  // Vendor coupons don't cross shops
-  }
-  // Check productIds, categoryIds...
-  return true;
-});
-
-const discount = calculateDiscount(eligibleItems, coupon);
-```
-
-**Cancelling an order gives the use back.** `applyCancellation` calls
-`releaseCouponForOrder`, which stamps that order's redemption `reversedAt` and
-decrements `usedCount` and `discountGiven`. Both the per-customer count and the
-guarded redeem ignore reversed rows, so one use of the per-customer and total
-allowances is freed — a code with `perCustomerLimit: 1` can be used again after a
-cancel. It is idempotent (the filter requires an unreversed row), so a repeated
-cancel cannot refund twice. A seller-group rejection does **not** release it; only a
-real order cancellation does.
-
-### Admin Notifications
-
-The store team gets a shared-feed line **and an email** for the events it acts on:
-a new order, every order status change, a review, a vendor or rider application,
-a plan/payment, a product submitted for review, and any delivery problem. Emails
-go to the store's **general inbox** — `contactEmail` in Site Settings, or the
-`CONTACT_INBOX` environment variable (falling back to `supportEmail`/`STORE_INBOX`)
-— so support mail stays separate. Like the seller notices, they are best-effort: a
-mail problem never fails the order or review that caused them.
-
-### Seller Notifications
-
-A seller gets the same two channels the store team does — a line in their bell and
-an email to the address on their account. They are notified when:
-
-- a **new order** is placed (their own group of it),
-- the order **changes status** (processing, shipped, delivered, cancelled),
-- a **review** is posted on one of their products,
-- a **plan or payment** event happens (subscription, renewal, purchase).
-
-Every notification is best-effort: a mail or feed problem never fails the order,
-review or payment that caused it.
+**Cancelling an order gives the use back.** `releaseCouponForOrder` stamps the redemption `reversedAt` and decrements the counters; reversed rows are ignored everywhere, so a single-use code works again. It is idempotent, so a repeated cancel cannot refund twice. A seller-group rejection does **not** release it — only a real order cancellation does.
 
 ### Featured Promotions
 
-**Two Kinds:**
-- **Product**: Feature one listing
-- **Store**: Feature entire shop (admin grant only)
+- **Product** places one listing; **store** places a whole shop (admin grant).
+- Only this module writes the `isFeatured` flags.
+- A vendor buys slots within plan limits; an admin grants 1-365 days.
+- State is derived from `endsAt`, so a placement never outlives its window.
+- Unpublishing a product, or a lapsed subscription, ends the placements.
 
-**Rules:**
-- Only this module writes `Product.isFeatured` and `VendorStore.isFeatured`
-- Vendor buys product slots (plan limits duration & quantity)
-- Admin grants product OR store placements (1-365 days)
-- State derived from `endsAt` (always accurate)
-- Daily cron closes expired placements
-- Unpublishing product ends its placement
-- Expired subscription ends all vendor's placements
+### Warranty (vocabulary only)
+
+A product may carry one warranty code — `manufacturer-warranty`, `seller-warranty`, `extended-warranty`, `other` or `none` — plus a period and a terms line. There is **no claim, extension or expiry workflow**; `src/modules/warranty/` holds only the shared type list.
+
+### Notifications
+
+- **Store team** — a feed line and an email for a new order, every status change, a review, an application, a plan/payment, a product submitted for review, and delivery problems.
+- **Seller** — a feed line and an email for their own orders, status changes, reviews and plan events.
+- Store-team email goes to the **general inbox** (`contactEmail`, or `CONTACT_INBOX`, falling back to `supportEmail`).
+- Every notification is **best-effort**: a mail or feed problem never fails the order, review or payment that caused it.
+- Each account can switch the bell and the email off independently.
 
 ### Security
 
-**Verifying the caller.** Every protected request resolves the account from the
-`Authorization: Bearer <token>` header. A JWT is verified against the
-storefront's JWKS endpoint; if that fails the token is treated as a session
-token and looked up in the shared `session` collection. An expired session, a
-suspended account and a missing user all end the same way — refused before any
-handler runs.
-
-**Roles and ownership.** `requireRole` checks the account's approved `roles`
-array (never the claimed active role), and each service scopes its reads to the
-caller: a customer reaches only their own orders, cart, wishlist and addresses,
-a seller only their own listings and codes, a rider only their own jobs. Admins
-reach everything, and a route that takes an id from the URL still checks
-ownership before it answers.
-
-**Prices are never trusted.** A request names products and quantities only. Every
-price, discount, shipping fee, point redemption and total is recomputed from the
-database, so a browser cannot make a 10% coupon worth 50% or force free shipping.
-
-For the concrete guarantees that back this up — a required cron secret, signed
-document links, guarded stock and coupon writes, suspension and expiry checks —
-see [Security Notes](#security-notes).
+- **Tokens** — verified via JWKS or a session lookup; only a bearer header counts.
+- **Roles** — checked against the approved array, never the client's claim.
+- **Ownership** — each service scopes reads to the caller before answering.
+- **Prices** — recomputed from the database, never taken from the request.
+- **Races** — stock and coupon writes carry their own guards.
+- **Documents** — read only through a signed link or a staff token.
+- **Scheduled routes** — require the bearer `CRON_SECRET`.
 
 ---
 
-## Implementation Status
+## Scheduled Jobs
 
-### ✅ Currently Implemented
+Vercel's **Hobby plan only allows daily cron jobs**, so `vercel.json` declares **one**: `GET /api/cron/daily`. That single job runs every sweep in order, each isolated so one failure never skips the rest:
 
-| Feature | Status |
-|---------|--------|
-| Core REST API | ✅ Production Ready |
-| Authentication | ✅ JWKS + session token, suspension & expiry checks |
-| Product Catalog | ✅ Full CRUD + search + review desk |
-| Order Processing | ✅ Transactional |
-| **Loyalty Points** | ✅ **Earning, redemption, tiers** |
-| **Multi-Vendor** | ✅ **Stores, plans, subscriptions, commission** |
-| **Rider Delivery** | ✅ **Assignment, GPS tracking, door code** |
-| Discount Coupons | ✅ Store + vendor codes |
-| Featured Promotions | ✅ Paid placements |
-| Document Uploads | ✅ Internal key on write, signed link on read |
-| Payment Demo | ✅ Wallet flow, refund on cancellation |
-| Email Notifications | ✅ SMTP with templates |
-| Scheduled Jobs | ✅ Daily cron tasks |
-| Demo Admin Mode | ✅ Auto-restore |
-| Activity Feed | ✅ Multi-role notifications |
+1. vendor subscriptions (close lapsed periods)
+2. featured promotions (end lapsed placements)
+3. product offers (revert lapsed prices)
+4. seller timeout (reject groups unanswered for 24 hours)
+5. deliveries (close unanswered offers)
+6. currency (pull the day's rates)
+7. demo restore (undo the demo admin's writes)
 
-### 📋 Future Enhancements (On Demand)
+The individual routes stay mounted — `/api/products/expire`, `/api/deliveries/expire`, `/api/vendor-subscription/expire`, `/api/promotions/expire`, `/api/vendor-orders/expire`, `/api/currency/refresh`, `/api/demo/restore` — so a Pro plan or an external scheduler can call any one on its own.
 
-| Feature | Status |
-|---------|--------|
-| Warranty Claims | 📋 Only types defined |
-| Rate Limiting | 📋 express-rate-limit |
-| Redis Caching | 📋 For sessions/products |
-| WebSocket | 📋 Real-time notifications |
-| Docker | 📋 Containerization |
-| Helmet.js | 📋 Security headers |
-| Load Balancer | 📋 Nginx/PM2 |
-| Kubernetes | 📋 Orchestration |
-| Monitoring | 📋 Sentry/Datadog |
-| Payment Gateways | 📋 Stripe, SSLCommerz |
-| Elasticsearch | 📋 Advanced search |
-
----
-
-## Recent Changes
-
-- **Customer cancel (limited):** a customer can cancel their own order, with a reason, while it is still being packed — before it ships and before a rider holds it. The old "received / not received / cancelled" report is gone.
-- **Rider requests:** the request email is informational only (no accept/decline link). The rider answers from the table or the delivery page, which now shows a numbered **collection route** — every selling shop's warehouse plus the store (admin) warehouse for store-owned items.
-- **Warehouse required:** a warehouse address is now required on a seller's store profile and on the store team's admin profile, because riders collect from it.
-- **Notification preferences:** each account has an account-wide **bell** switch and **email** switch (customer and admin). The bell gates notifications on every dashboard the account can open; the email switch gates mail to that address.
-- **Subscription payment:** a paid plan now runs through the animated gateway flow instead of a toast.
-- **Plan exports:** Premium exports the **PDF**; Advanced exports **CSV + PDF**.
+Every scheduled route requires `Authorization: Bearer <CRON_SECRET>`; the `x-vercel-cron` header alone is never trusted. A long-running host (not Vercel) runs the same sweeps with `node-cron` in-process, armed only when `VERCEL` is unset, so they never run twice.
 
 ---
 
 ## Demo Admin Mode
 
-A demo admin (`DEMO_ADMIN_EMAIL`) has the same access as a real admin, but every
-write it makes is recorded in a `demo_undo` log and reverted by the nightly
-sweep — not after a rolling 24 hours, but once a day at 00:00 Asia/Dhaka
-(`0 18 * * *` UTC on Vercel). Only the demo admin's own writes are logged; a real
-admin's changes are never touched.
+A demo admin (`DEMO_ADMIN_EMAIL`, default `demoadmin@gmail.com`) has the same access as a real admin, but **every write it makes is recorded** in a `demo_undo` log and reverted by the daily sweep. Only the demo admin's writes are logged; a real admin's changes are never touched.
 
 **What the restore does**
 
-1. Created rows (`before: null`) are deleted — **unless something real still
-   references them**. If a real product sits in a demo-created category, a cart
-   holds a demo-created product, or an order points at a demo-created row, that
-   row is kept and the sweep logs it (`kept`), so a reference is never left
-   pointing at nothing.
-2. Edited or deleted rows are put back from the snapshot, so a real row the demo
-   admin changed returns to its original state.
+1. **Created rows** are deleted — **unless something real still references them**. A row real data points at is kept and reported as `kept`, so a reference is never left dangling.
+2. **Edited or deleted rows** are put back from the snapshot.
 
-The reference check scans the app's collections for any field (`userId`,
-`categoryId`, `productId`, `orderId`, `storeId`, … and their array forms) equal
-to the row's id. Ids are globally unique, so a match is always a genuine
-dependency. A reference field the check does not know about fails safe: the row
-is kept rather than orphaned. Each run reports `removed`, `restored` and `kept`
-per collection.
+The reference check scans the app's collections for any field equal to the row's id; an unknown reference field fails safe (keep, do not delete). Each run reports `removed`, `restored` and `kept` per collection.
 
 ---
 
@@ -784,7 +268,7 @@ per collection.
 
 ## Quick Start
 
-### 1. Clone & Install
+**1. Clone & install**
 
 ```bash
 git clone https://github.com/demoprojectbdsoft/Sparq-Server.git
@@ -792,127 +276,23 @@ cd Sparq-Server
 npm install
 ```
 
-### 2. Configure Environment
+**2. Configure `.env`** (see [Environment Setup](#environment-setup)) — at minimum `MONGODB_URI`, `DATABASE`, `PORT`, `NEXT_PUBLIC_CLIENT_URL`, `INTERNAL_API_KEY` and `CRON_SECRET`. Add the SMTP keys to enable email.
 
-Create `.env.local`:
-
-```env
-# Database
-MONGODB_URI=mongodb://localhost:27017
-DATABASE=sparq
-
-# Server
-PORT=5000
-NEXT_PUBLIC_CLIENT_URL=http://localhost:3000
-
-# Security
-INTERNAL_API_KEY=your_random_32_char_key
-CRON_SECRET=your_random_32_char_key
-
-# Email (Gmail)
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=your-email@gmail.com
-SMTP_PASS=your-app-password
-MAIL_FROM=your-email@gmail.com
-
-# Demo
-DEMO_ADMIN_EMAIL=demoadmin@example.com
-CRON_TIMEZONE=Asia/Dhaka
-```
-
-**Gmail Setup:**
-1. Enable 2FA on Google account
-2. Generate app password at https://myaccount.google.com/apppasswords
-3. Use app password as `SMTP_PASS`
-
-### 3. Start Server
+**3. Start**
 
 ```bash
-npm run dev      # Development (port 5000)
-npm run build    # Production build
-npm start        # Production server
+npm run dev      # development (port 5000)
+npm run build    # production build
+npm start        # production server
 ```
 
----
-
-## Project Structure
-
-```
-src/
-├── app.ts                     Express app setup
-├── index.ts                   Server entry + cron jobs
-│
-├── config/
-│   ├── db.ts                  MongoDB connection
-│   └── env.ts                 Environment validation
-│
-├── middlewares/
-│   ├── auth.middleware.ts     JWT verification
-│   ├── role.middleware.ts     Role guards
-│   ├── internal.middleware.ts Internal API key check
-│   ├── cron.middleware.ts     Cron job guard
-│   ├── error.middleware.ts    Error handler
-│   └── notFound.middleware.ts 404 handler
-│
-├── modules/
-│   ├── user/                  User management
-│   ├── product/               Product catalog + review desk
-│   ├── product-engagement/    Views & favourites
-│   ├── category/              Categories
-│   ├── subcategory/           Subcategories
-│   ├── cart/                  Shopping cart
-│   ├── wishlist/              Wishlist
-│   ├── order/                 Orders
-│   ├── order-status/          Status history
-│   ├── transaction/           Payment records
-│   ├── review/                Reviews
-│   ├── address/               Saved addresses
-│   ├── coupon/                Store coupons
-│   ├── banner/                Hero banners
-│   ├── promo/                 Promo banners
-│   ├── contact/               Contact form
-│   ├── message/               Stored messages
-│   ├── activity/              Notifications & feed
-│   ├── site-settings/         Store config
-│   ├── file/                  Document uploads
-│   ├── demo/                  Demo admin
-│   ├── mail/                  Internal email
-│   ├── delivery/              Riders, jobs, tracking
-│   ├── rider/                 Rider applications
-│   ├── warranty/              Warranty type list (no workflow)
-│   └── vendor/                Multi-vendor
-│       ├── vendor-application/
-│       ├── vendor-store/
-│       ├── vendor-product/
-│       ├── vendor-order/
-│       ├── vendor-plan/
-│       ├── vendor-subscription/
-│       ├── vendor-coupon/
-│       ├── vendor-promotion/
-│       ├── vendor-analytics/
-│       ├── vendor-desk/
-│       └── vendor-admin/
-│
-└── utils/
-    ├── apiError.ts            Error class
-    ├── apiResponse.ts         Response formatter
-    ├── catchAsync.ts          Async wrapper
-    ├── validate.ts            Zod middleware
-    ├── authz.ts               Authorization helpers
-    ├── transactions.ts        DB transaction wrapper
-    ├── roles.ts               Role utilities
-    ├── ids.ts                 ObjectId helpers
-    ├── mailer.ts              SMTP sender
-    └── emailTemplates.ts      Email HTML
-```
+The storefront runs separately on port 3000; see its README.
 
 ---
 
 ## Environment Setup
 
-### Required Variables
+**Required**
 
 | Variable | Description |
 |----------|-------------|
@@ -920,155 +300,101 @@ src/
 | `DATABASE` | Database name |
 | `PORT` | Server port (5000) |
 | `NEXT_PUBLIC_CLIENT_URL` | Frontend URL (for JWKS and CORS) |
-| `INTERNAL_API_KEY` | Shared secret with frontend |
-| `CRON_SECRET` | Bearer secret for the scheduled HTTP routes |
+| `INTERNAL_API_KEY` | Shared secret with the frontend |
+| `CRON_SECRET` | Bearer secret for the scheduled routes |
 
-### Email Configuration
+**Email**
 
 | Variable | Description |
 |----------|-------------|
-| `SMTP_HOST` | SMTP server |
-| `SMTP_PORT` | SMTP port (587 for TLS) |
-| `SMTP_SECURE` | Use SSL? (false for TLS) |
-| `SMTP_USER` | Email address |
-| `SMTP_PASS` | App password |
+| `SMTP_HOST` / `SMTP_PORT` | SMTP server and port |
+| `SMTP_SECURE` | Use SSL (`false` for TLS) |
+| `SMTP_USER` / `SMTP_PASS` | Account and app password |
 | `MAIL_FROM` | From address |
 
-### Optional
+**Optional**
 
 | Variable | Default |
 |----------|---------|
 | `DEMO_ADMIN_EMAIL` | Demo admin email |
 | `CRON_TIMEZONE` | UTC |
-| `CORS_ORIGINS` | Comma-separated browser origins allowed by CORS (falls back to `NEXT_PUBLIC_CLIENT_URL`) |
+| `CORS_ORIGINS` | Browser origins allowed by CORS (falls back to `NEXT_PUBLIC_CLIENT_URL`) |
 | `FILE_URL_SECRET` | HMAC key for signed document links (falls back to `INTERNAL_API_KEY`) |
 
 ---
 
 ## Deployment
 
-### Vercel
+**Vercel**
 
-1. **Push to GitHub**
-2. **Import to Vercel**
-3. **Configure:**
-   - Build: `npm run build`
-   - Output: `dist`
-   - Install: `npm install`
-4. **Add environment variables** (all from `.env.local`)
-5. **Deploy**
+1. Push to GitHub, then import to Vercel.
+2. Build `npm run build`, output `dist`, install `npm install`.
+3. Add the environment variables.
+4. Deploy.
 
-### Vercel Cron Jobs
+**Cron.** `vercel.json` declares one daily job, `/api/cron/daily`, which runs every sweep. `CRON_SECRET` must be set or the job is refused. On a Pro plan you can add the individual `/expire` routes back with finer schedules.
 
-Configured in `vercel.json`:
+**Production checklist**
 
-```json
-{
-  "crons": [
-    { "path": "/api/demo/restore", "schedule": "0 18 * * *" },
-    { "path": "/api/deliveries/expire", "schedule": "0 18 * * *" },
-    { "path": "/api/vendor-subscription/expire", "schedule": "15 19 * * *" },
-    { "path": "/api/promotions/expire", "schedule": "30 19 * * *" },
-    { "path": "/api/products/expire", "schedule": "45 19 * * *" },
-    { "path": "/api/currency/refresh", "schedule": "0 2 * * *" },
-    { "path": "/api/vendor-orders/expire", "schedule": "0 * * * *" }
-  ]
-}
-```
-
-Every scheduled route requires `Authorization: Bearer <CRON_SECRET>`. Vercel sends
-that header automatically once `CRON_SECRET` is set in the project, so the secret
-must be configured or the jobs are refused. The `x-vercel-cron` header Vercel also
-sends is spoofable and is never trusted on its own. A long-running host (not
-Vercel) instead runs the same sweeps with `node-cron` in-process; those timers are
-armed only when `VERCEL` is unset, so the jobs never run twice.
-
-### Production Checklist
-
-- [ ] Set a strong `CRON_SECRET` (required for the scheduled routes) and `INTERNAL_API_KEY`
-- [ ] Configure MongoDB Atlas whitelist
-- [ ] Set up production SMTP
-- [ ] Update `NEXT_PUBLIC_CLIENT_URL` to production frontend
-- [ ] Set `CORS_ORIGINS` to the production storefront origin(s)
-- [ ] Test all cron jobs
+- [ ] Strong `CRON_SECRET` and `INTERNAL_API_KEY`
+- [ ] MongoDB Atlas IP allowlist
+- [ ] Production SMTP
+- [ ] `NEXT_PUBLIC_CLIENT_URL` -> production storefront
+- [ ] `CORS_ORIGINS` -> production origin(s)
+- [ ] Run `/api/cron/daily` once and check the report
 - [ ] Verify email delivery
-- [ ] Set `NODE_ENV=production`
-- [ ] Add an edge rate limit in front of `/api/coupons/validate` and `POST /api/orders`
+- [ ] `NODE_ENV=production`
+- [ ] Add an edge rate limit in front of `POST /api/coupons/validate` and `POST /api/orders`
 
 ### Security Notes
 
-- Suspended accounts are refused at the API, not only in the interface, and a
-  session token past its `expiresAt` no longer authenticates.
-- Suspending an account cascades to the seller/rider side: the seller's shop is
-  set to `suspended` (its listings drop off the storefront, the product page
-  404s, and checkout refuses its lines), the vendor and rider dashboards are
-  parked, and the rider is set offline. Reactivating releases only what the
-  suspension parked — a shop or dashboard the team closed for its own reason is
-  left as they left it. A seller's suspended shop is filtered out of the public
-  catalogue within a short cache window (~15s).
-- Scheduled HTTP routes require `CRON_SECRET`; the `x-vercel-cron` header is not
-  trusted on its own.
-- The delivery fee is re-derived on the server — a request cannot post
-  `shippingMethod: "free"` to escape the charge.
-- Coupon usage and per-customer limits are re-checked at the moment of the
-  write, and a stock decrement carries its own guard, so two orders cannot both
-  spend the last unit or the last redemption.
-- Application documents are read only through the signed link the upload
-  returns, or a store-team token. Links issued before this change carry no
-  signature and must be re-uploaded.
-- Account deletion removes the account's own rows and its better-auth sessions;
-  orders, payments and a seller's products are kept as records.
+- Suspended accounts are refused at the API; a session past its `expiresAt` no longer authenticates.
+- Suspending an account cascades: the seller's shop is set to `suspended` (listings drop off, the product page 404s, checkout refuses its lines), the dashboards are parked, and the rider goes offline. Reactivating releases only what the suspension parked.
+- Scheduled routes require `CRON_SECRET`; the `x-vercel-cron` header is not trusted on its own.
+- The delivery fee is re-derived on the server — a request cannot post `shippingMethod: "free"` to escape the charge.
+- Coupon usage and per-customer limits are re-checked at the moment of the write, and a stock decrement carries its own guard.
+- Application documents are read only through the signed link the upload returns, or a store-team token.
+- Account deletion removes the account's own rows and its sessions; orders, payments and a seller's products are kept as records.
 - The site-settings patch is validated and unknown keys are dropped.
 
 ### Payments (demo)
 
-This build has **no payment gateway** — online payment is simulated. The rules
-that keep the demo honest:
+This build has **no payment gateway** — online payment is simulated.
 
-- Every non-COD payment is stored with `isDemo: true` and marked `success` at
-  checkout; cash on delivery starts `pending` and settles at the door.
-- A wallet transaction id cannot be reused: a second order with the same
-  reference is refused, so one demo TrxID cannot pay for two orders.
-- Transaction statuses are `pending`, `success`, `failed` and `refunded`.
-  Cancelling an order fails a payment that never landed and marks one that had
-  gone through as `refunded`, which the customer dashboard shows as "Refunded".
+- Every non-COD payment is stored with `isDemo: true` and marked `success` at checkout; cash on delivery starts `pending` and settles at the door.
+- A wallet transaction id cannot be reused.
+- Statuses are `pending`, `success`, `failed` and `refunded`; cancelling fails an unpaid payment and marks a paid one as `refunded`.
 
 ---
 
 ## Development
 
-### Adding a Module
+**Adding a module**
 
-1. **Create directory**: `mkdir src/modules/feature`
-2. **Create files**:
-   - `feature.model.ts` - Mongoose schema
-   - `feature.service.ts` - Business logic
-   - `feature.controller.ts` - HTTP handlers
-   - `feature.validator.ts` - Zod schemas
-   - `feature.route.ts` - Express routes
-   - `feature.types.ts` - TypeScript types
-3. **Mount routes** in `app.ts`:
-   ```typescript
-   import featureRoutes from './modules/feature/feature.route';
-   app.use('/api/features', featureRoutes);
-   ```
+1. Create `src/modules/feature/`.
+2. Add `feature.model.ts`, `.service.ts`, `.controller.ts`, `.validator.ts`, `.route.ts` (and `.types.ts` if needed).
+3. Mount it in `app.ts`:
 
-### Available Scripts
+```typescript
+import featureRoutes from "./modules/feature/feature.route";
+app.use("/api/features", featureRoutes);
+```
+
+**Scripts**
 
 ```bash
-npm run dev              # Development (watch mode)
+npm run dev              # development (watch mode)
 npm run build            # TypeScript compilation
-npm start                # Production server
-npm run dedupe:reviews   # Cleanup script
+npm start                # production server
+npm run dedupe:reviews   # cleanup script
 ```
 
 ---
 
 ## Support & Links
 
-- **Frontend Docs**: [Sparq README](https://github.com/demoprojectbdsoft/Sparq-Electronics-Store)
+- **Frontend**: [Sparq README](https://github.com/demoprojectbdsoft/Sparq-Electronics-Store)
 - **Issues**: [GitHub Issues](https://github.com/demoprojectbdsoft/Sparq-Server/issues)
-- **Live API**: [sparq-api.vercel.app](https://sparq-api.vercel.app)
 
 ---
 
