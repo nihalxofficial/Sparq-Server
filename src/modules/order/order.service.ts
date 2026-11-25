@@ -7,7 +7,7 @@ import { Transaction } from "../transaction/transaction.model";
 import { ApiError } from "../../utils/apiError";
 import { assertOwnerOrAdmin } from "../../utils/authz";
 import { withTransaction } from "../../utils/transactions";
-import { CreateOrderInput, UpdateOrderStatusInput, GetOrdersQuery } from "./order.validator";
+import { CreateOrderInput, UpdateOrderStatusInput, CancelOrderInput, GetOrdersQuery } from "./order.validator";
 import { isAllowedTransition, nextStatuses } from "./order.flow";
 import { logOrderStatus } from "../order-status/order-status.service";
 import { createTransaction, getLatestTransactionForOrder } from "../transaction/transaction.service";
@@ -1135,4 +1135,62 @@ export async function shipOrderForAcceptedDelivery(orderId: string, riderId?: st
   return updateOrderStatus(orderId, { orderStatus: "shipped" }, riderId);
 }
 
-// ─── Customer Order Response ───────────────────────────────────────────────────
+// ─── Customer Cancels Their Order ─────────────────────────────────────────────
+
+/**
+ * A customer calling off their own order, before anybody is on the road.
+ *
+ * Allowed only while the order is still being packed — confirmed or processing,
+ * with no rider holding it. Once it ships, cancelling belongs to the return
+ * flow, not to a button. The reason is kept on the status log for the store.
+ */
+export async function cancelMyOrder(
+  id: string,
+  input: CancelOrderInput,
+  requester?: { id?: string; role?: string }
+) {
+  const order = await Order.findById(id);
+  if (!order) throw new ApiError(404, "Order not found");
+
+  assertOwnerOrAdmin(order.userId, requester, "You are not authorized to cancel this order");
+
+  if (order.orderStatus === "cancelled") {
+    throw new ApiError(400, "This order is already cancelled");
+  }
+
+  // Once the parcel has left the store it is the return flow's problem, not a
+  // cancel button's.
+  if (order.orderStatus === "shipped" || order.orderStatus === "delivered") {
+    throw new ApiError(
+      400,
+      "This order has already shipped, so it can no longer be cancelled. Contact support for a return."
+    );
+  }
+
+  // A rider holding it (or an open offer) closes the window too: standing a
+  // rider down is the store's call, not the customer's.
+  const claim = await Delivery.findOne({
+    orderId: id,
+    status: { $in: LIVE_DELIVERY_STATUSES },
+  })
+    .select("_id status expiresAt")
+    .lean();
+
+  if (claim && !isLapsedOffer(claim)) {
+    throw new ApiError(
+      400,
+      "A rider is already handling this order, so it can no longer be cancelled from here."
+    );
+  }
+
+  await updateOrderStatus(id, { orderStatus: "cancelled" }, requester?.id, { byCustomer: true });
+
+  if (input.reason) {
+    await logOrderStatus(id, "cancelled", {
+      note: `Customer cancelled: ${input.reason}`,
+      changedBy: requester?.id,
+    });
+  }
+
+  return Order.findById(id);
+}

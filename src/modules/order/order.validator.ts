@@ -66,6 +66,11 @@ export const updateOrderStatusSchema = z.object({
   orderStatus: z.enum(["confirmed", "processing", "shipped", "delivered", "cancelled"]),
 });
 
+/** A customer calling off their own order, before it has shipped. */
+export const cancelOrderSchema = z.object({
+  reason: z.string().trim().max(300).optional().default(""),
+});
+
 export const getOrdersQuerySchema = z.object({
   userId: z.string().optional(),
   status: z.string().optional(),
@@ -82,4 +87,5 @@ export const getOrdersQuerySchema = z.object({
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusSchema>;
+export type CancelOrderInput = z.infer<typeof cancelOrderSchema>;
 export type GetOrdersQuery = z.infer<typeof getOrdersQuerySchema>;

@@ -38,3 +38,12 @@ export const updateOrderStatus = catchAsync(async (req, res) => {
   );
   apiResponse(res, 200, order, "Order status updated");
 });
+
+export const cancelMyOrder = catchAsync(async (req, res) => {
+  const order = await orderService.cancelMyOrder(
+    req.params.id as string,
+    req.body,
+    req.user
+  );
+  apiResponse(res, 200, order, "Order cancelled");
+});
