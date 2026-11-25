@@ -208,7 +208,7 @@ GET    /api/orders                  🔐  List orders (customer: own, admin: all
 GET    /api/orders/:id              🔐  Get order details
 POST   /api/orders                  🔐  Place new order
 PATCH  /api/orders/:id/status       👑  Update order status
-PATCH  /api/orders/:id/customer-response  🔐  Report delivery outcome
+PATCH  /api/orders/:id/cancel       🔐  Cancel own order (before it ships)
 
 GET    /api/order-status            🔐  Get order status history
 GET    /api/transactions            🔐  List payment records
