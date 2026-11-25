@@ -856,8 +856,24 @@ async function announceAssignment(delivery: any) {
 export async function assignDelivery(input: AssignDeliveryInput, adminId?: string) {
   const order = await Order.findById(input.orderId);
   if (!order) throw new ApiError(404, "Order not found");
-  if (order.orderStatus === "cancelled" || order.orderStatus === "delivered") {
+    if (order.orderStatus === "cancelled" || order.orderStatus === "delivered") {
     throw new ApiError(400, `A ${order.orderStatus} order cannot be assigned to a rider`);
+  }
+
+  // A multi-seller order waits for every seller to answer: no rider is put on it
+  // until all have accepted, and one rejection has already cancelled the order.
+  const groups = await VendorOrder.find({ orderId: order._id }).select("status").lean();
+  if (groups.length > 0) {
+    const pending = groups.filter((group) => group.status === "pending").length;
+    if (pending > 0) {
+      throw new ApiError(
+        409,
+        `${pending} seller${pending === 1 ? " has" : "s have"} not answered yet — assign a rider once every seller accepts.`
+      );
+    }
+    if (groups.some((group) => group.status === "rejected")) {
+      throw new ApiError(400, "A seller rejected this order, so it is cancelled");
+    }
   }
 
   await requireRiderAccount(input.riderId);

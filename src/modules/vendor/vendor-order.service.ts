@@ -270,6 +270,13 @@ export async function updateMyVendorOrderStatus(
 
   if (input.status === "rejected") {
     await restockItems(row.items);
+
+    // One seller's rejection cancels the whole order, so the customer is told
+    // why and the parent's own cancellation returns the other lines' stock and
+    // the coupon's use. The rejected group is skipped by that restock, so
+    // nothing is given back twice.
+    await Order.updateOne({ _id: row.orderId }, { $set: { rejectionReason: reason } });
+    await updateOrderStatus(String(row.orderId), { orderStatus: "cancelled" }, vendorId);
   }
 
   await recordActivity({

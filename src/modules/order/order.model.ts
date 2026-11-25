@@ -70,6 +70,11 @@ const orderSchema = new Schema(
       type: Date,
       default: null,
     },
+    /** Why a seller rejected their slice — shown to the customer. */
+    rejectionReason: {
+      type: String,
+      default: "",
+    },
     pointsEarned: { type: Number, default: 0 },
     /** Loyalty points this order used up, and the money they saved. */
     pointsRedeemed: { type: Number, default: 0 },
