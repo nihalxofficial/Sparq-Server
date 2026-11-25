@@ -25,6 +25,7 @@ import {
 import { isLapsedOffer } from "../delivery/delivery.flow";
 import { createVendorOrdersForOrder, syncVendorOrdersForParentStatus } from "../vendor/vendor-order.create";
 import { VendorOrder, type VendorOrderStatus } from "../vendor/vendor-order.model";
+import { VendorStore } from "../vendor/vendor-store.model";
 import { isLiveVendorProductStatus } from "../vendor/vendor.types";
 import {
   evaluateCoupon,
@@ -178,6 +179,15 @@ async function buildOrderItems(items: CreateOrderInput["items"]) {
       (vendorStatus != null && !isLiveVendorProductStatus(vendorStatus))
     ) {
       throw new ApiError(404, `Product not found: ${item.productId}`);
+    }
+
+    // A suspended or hidden shop is not selling: its listings are off the
+    // storefront, so an order for one is refused here too.
+    if (product.storeId) {
+      const store = await VendorStore.findById(product.storeId).select("status isVisible").lean();
+      if (!store || (store as any).status !== "active" || (store as any).isVisible === false) {
+        throw new ApiError(400, `"${product.title}" is not available right now`);
+      }
     }
 
     if (product.stockQuantity != null && product.stockQuantity < item.quantity) {

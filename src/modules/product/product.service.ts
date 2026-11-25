@@ -454,6 +454,21 @@ function buildOfferCondition() {
   };
 }
 
+// A shop that is not trading — suspended by the team, or hidden — keeps its
+// stock off the storefront. Cached briefly so a busy catalogue does not re-read
+// the store list on every request; a suspension takes effect within this window.
+let blockedStoreCache: { ids: any[]; at: number } = { ids: [], at: 0 };
+const BLOCKED_STORE_TTL = 15_000;
+
+async function nonTradingStoreIds(): Promise<any[]> {
+  if (Date.now() - blockedStoreCache.at < BLOCKED_STORE_TTL) return blockedStoreCache.ids;
+  const ids = await VendorStore.find({
+    $or: [{ status: { $ne: "active" } }, { isVisible: false }],
+  }).distinct("_id");
+  blockedStoreCache = { ids, at: Date.now() };
+  return ids;
+}
+
 /**
  * Turns the shop query into the list of AND-ed Mongo conditions.
  *
@@ -511,6 +526,11 @@ async function buildFilterConditions(
             { vendorProductStatus: { $exists: false } },
             { vendorProductStatus: { $in: [...VENDOR_LIVE_PRODUCT_STATUSES] } },
           ],
+        },
+        // A suspended or hidden shop's stock is not on sale: platform rows carry
+        // no store, so only a seller's lines are subject to this.
+        {
+          $or: [{ storeId: null }, { storeId: { $nin: await nonTradingStoreIds() } }],
         },
       ],
     });
@@ -874,17 +894,20 @@ export async function getProductBySlug(slug: string, view: ProductView = "public
   const product = await Product.findOne({ slug })
     .populate("categoryId", "name slug")
     .populate("subCategoryIds", "name slug")
-    .populate("storeId", "name slug");
+    .populate("storeId", "name slug status isVisible");
   if (!product) throw new ApiError(404, "Product not found");
 
   // A seller's row that is not live is not a storefront page, even to someone
   // who guessed the link: drafts, submissions, rejections and archived stock
   // all wait behind the desk. The admin view reads it so the desk can act.
   const vendorStatus = (product as any).vendorProductStatus;
+  const store = product.storeId as any;
   if (
     view !== "admin" &&
     (product.isVisible === false ||
-      (vendorStatus != null && !isLiveVendorProductStatus(vendorStatus)))
+      (vendorStatus != null && !isLiveVendorProductStatus(vendorStatus)) ||
+      // A product on a suspended or hidden shop is not a storefront page either.
+      (store && (store.status !== "active" || store.isVisible === false)))
   ) {
     throw new ApiError(404, "Product not found");
   }
