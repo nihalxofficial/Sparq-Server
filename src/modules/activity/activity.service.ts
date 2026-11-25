@@ -4,6 +4,7 @@ import { ApiError } from "../../utils/apiError";
 import { GetFeedQuery } from "./activity.validator";
 import { isAdminRole } from "../../utils/roles";
 import { escapeRegex } from "../../utils/regex";
+import { User } from "../user/user.model";
 
 export type StoreActivityType = (typeof STORE_ACTIVITY_TYPES)[number];
 export type PersonalActivityType = (typeof PERSONAL_ACTIVITY_TYPES)[number];
@@ -95,6 +96,16 @@ export async function recordActivity(data: NewActivity): Promise<void> {
  */
 export async function notifyUser(data: NewNotification): Promise<void> {
   try {
+    // The account's own bell switch. Off means no line on any dashboard the
+    // account can open (customer, rider or seller) — the one preference the
+    // settings screen owns.
+    const recipient = await User.findById(data.userId)
+      .select("notificationsEnabled")
+      .lean();
+    if (recipient && (recipient as { notificationsEnabled?: boolean }).notificationsEnabled === false) {
+      return;
+    }
+
     await Activity.create({
       userId: data.userId,
       role: data.role,

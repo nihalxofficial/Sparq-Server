@@ -13,6 +13,7 @@ import {
   RevokeRoleInput,
   SetActiveRoleInput,
   SetRoleSuspensionInput,
+  UpdatePreferencesInput,
   UpdateUserInput,
 } from "./user.validator";
 import { getMembershipTier } from "../order/order.service";
@@ -602,4 +603,32 @@ export async function syncLegacyRoles(): Promise<{ updated: number }> {
   }
 
   return { updated };
+}
+
+/**
+ * The account's own switches for the bell and for email.
+ *
+ * One account can open the customer, rider and seller dashboards, and the bell
+ * switch feeds all three; the email switch gates the mail sent to this address.
+ * Both default to on, so a patch has to say "false" to turn one off.
+ */
+export async function updateMyPreferences(userId: string, input: UpdatePreferencesInput) {
+  const patch: Record<string, unknown> = {};
+  if (input.notifications !== undefined) patch.notificationsEnabled = input.notifications;
+  if (input.email !== undefined) patch.emailNotificationsEnabled = input.email;
+
+  if (Object.keys(patch).length === 0) {
+    throw new ApiError(400, "Nothing to update");
+  }
+
+  const user = await User.findByIdAndUpdate(userId, { $set: patch }, { new: true })
+    .select("notificationsEnabled emailNotificationsEnabled")
+    .lean();
+
+  if (!user) throw new ApiError(404, "User not found");
+
+  return {
+    notifications: user.notificationsEnabled !== false,
+    email: user.emailNotificationsEnabled !== false,
+  };
 }

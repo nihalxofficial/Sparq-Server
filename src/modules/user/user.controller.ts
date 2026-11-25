@@ -84,6 +84,12 @@ export const getMyRoles = catchAsync(async (req, res) => {
   apiResponse(res, 200, roles, "Roles fetched successfully");
 });
 
+/** The account's own bell and email switches. */
+export const updateMyPreferences = catchAsync(async (req, res) => {
+  const prefs = await userService.updateMyPreferences(currentUserId(req.user), req.body);
+  apiResponse(res, 200, prefs, "Preferences updated");
+});
+
 /**
  * Points the caller's own dashboard at another approved role.
  *

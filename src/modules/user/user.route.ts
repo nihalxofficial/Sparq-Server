@@ -4,6 +4,7 @@ import {
   revokeRoleSchema,
   setActiveRoleSchema,
   setRoleSuspensionSchema,
+  updatePreferencesSchema,
   updateUserSchema,
 } from "./user.validator";
 import * as userController from "./user.controller";
@@ -44,6 +45,12 @@ router.patch(
 // ─── Self-service ─────────────────────────────────────────────────────────────
 router.get("/me/export", requireAuth, userController.exportMyData);
 router.get("/me/roles", requireAuth, userController.getMyRoles);
+router.patch(
+  "/me/preferences",
+  requireAuth,
+  validate(updatePreferencesSchema),
+  userController.updateMyPreferences
+);
 router.patch(
   "/me/active-role",
   requireAuth,

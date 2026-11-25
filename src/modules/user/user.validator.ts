@@ -122,3 +122,10 @@ export type GetUsersQuery = z.infer<typeof getUsersQuerySchema>;
 export type SetActiveRoleInput = z.infer<typeof setActiveRoleSchema>;
 export type RevokeRoleInput = z.infer<typeof revokeRoleSchema>;
 export type SetRoleSuspensionInput = z.infer<typeof setRoleSuspensionSchema>;
+
+/** The two switches the account owns on its settings screen. */
+export const updatePreferencesSchema = z.object({
+  notifications: z.boolean().optional(),
+  email: z.boolean().optional(),
+});
+export type UpdatePreferencesInput = z.infer<typeof updatePreferencesSchema>;

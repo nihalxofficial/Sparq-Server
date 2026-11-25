@@ -23,8 +23,14 @@ function money(amount?: number): string {
 
 async function recipientOf(userId: string) {
   try {
-    const user: any = await User.findById(userId).select("name email").lean();
-    return { name: user?.name as string | undefined, email: user?.email as string | undefined };
+    const user: any = await User.findById(userId)
+      .select("name email emailNotificationsEnabled")
+      .lean();
+    // The account's own email switch. Off returns no address, so the caller's
+    // send is skipped rather than arriving against the customer's wish.
+    const email =
+      user?.emailNotificationsEnabled === false ? undefined : (user?.email as string | undefined);
+    return { name: user?.name as string | undefined, email };
   } catch {
     return { name: undefined, email: undefined };
   }

@@ -69,6 +69,11 @@ const userSchema = new Schema(
     },
     plan: { type: String },
     status: { type: String },
+  // The account's own switches, independent of each other. The bell one feeds
+  // every dashboard the account can open (customer, rider, seller); the email
+  // one gates the mail sent to this address.
+  notificationsEnabled: { type: Boolean, default: true },
+  emailNotificationsEnabled: { type: Boolean, default: true },
     member: { type: String },
     points: { type: Number },
     phone: { type: String },
