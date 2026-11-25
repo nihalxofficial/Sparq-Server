@@ -225,18 +225,28 @@ export function toPublicStoreDto(store: any) {
  * and 100% off zero parcels would be a number the shop never earned.
  */
 async function storeRecordsOf(
-  storeIds: string[]
+  pairs: { storeId: string; vendorId: string }[]
 ): Promise<Map<string, { completedOrders: number; successRate: number }>> {
-  const ids = storeIds
+  // Groups are keyed by the seller's account, which is exactly what the seller's
+  // own order board counts by — so the two can never disagree about the same
+  // shop. `storeId` on a group can be empty (a listing sold before the store
+  // existed), which is why the account, not the store, is the join.
+  const vendorIds = pairs
+    .map((pair) => pair.vendorId)
     .filter((id) => Types.ObjectId.isValid(id))
     .map((id) => new Types.ObjectId(id));
-  if (ids.length === 0) return new Map();
+  if (vendorIds.length === 0) return new Map();
 
   const rows = await VendorOrder.aggregate([
-    { $match: { storeId: { $in: ids } } },
+    { $match: { vendorId: { $in: vendorIds } } },
     {
       $group: {
-        _id: "$storeId",
+        _id: "$vendorId",
+        // "Completed" is what the seller's board calls the tile: a group that has
+        // shipped or already been delivered.
+        completed: {
+          $sum: { $cond: [{ $in: ["$status", ["shipped", "delivered"]] }, 1, 0] },
+        },
         delivered: { $sum: { $cond: [{ $eq: ["$status", "delivered"] }, 1, 0] } },
         stopped: {
           $sum: { $cond: [{ $in: ["$status", ["cancelled", "rejected"]] }, 1, 0] },
@@ -245,24 +255,31 @@ async function storeRecordsOf(
     },
   ]);
 
-  const records = new Map<string, { completedOrders: number; successRate: number }>();
+  const byVendor = new Map<string, { completedOrders: number; successRate: number }>();
   for (const row of rows) {
     const delivered = Number(row.delivered) || 0;
     const closed = delivered + (Number(row.stopped) || 0);
-    records.set(String(row._id), {
-      completedOrders: delivered,
+    byVendor.set(String(row._id), {
+      completedOrders: Number(row.completed) || 0,
       successRate: closed > 0 ? Math.round((delivered / closed) * 100) : 0,
     });
+  }
+
+  const records = new Map<string, { completedOrders: number; successRate: number }>();
+  for (const pair of pairs) {
+    records.set(pair.storeId, byVendor.get(pair.vendorId) ?? { completedOrders: 0, successRate: 0 });
   }
   return records;
 }
 
-/** Folds the closed-parcel record into the public rows that were already mapped. */
+/** Folds each shop's order record into the rows that were already mapped. */
 async function withStoreRecords<T extends { _id: string }>(
-  stores: T[]
+  items: { store: T; vendorId: string }[]
 ): Promise<(T & { completedOrders: number; successRate: number })[]> {
-  const records = await storeRecordsOf(stores.map((store) => store._id));
-  return stores.map((store) => {
+  const records = await storeRecordsOf(
+    items.map((item) => ({ storeId: item.store._id, vendorId: item.vendorId }))
+  );
+  return items.map(({ store }) => {
     const record = records.get(store._id);
     return {
       ...store,
@@ -272,7 +289,7 @@ async function withStoreRecords<T extends { _id: string }>(
   });
 }
 
-/** The store a public page reads: visible, active and not suspended. */
+/** The raw store a public page reads: visible, active and not suspended. */
 export async function getVisibleStoreBySlug(slug: string) {
   const store = await VendorStore.findOne({
     slug: slug.trim().toLowerCase(),
@@ -281,13 +298,16 @@ export async function getVisibleStoreBySlug(slug: string) {
   }).lean();
 
   if (!store) throw new ApiError(404, "Store not found");
-  return toStoreDto(store);
+  return store;
 }
 
 /** The same shop for a public page, with the private fields off. */
 export async function getPublicStoreBySlug(slug: string) {
-  const store = toPublicStoreDto(await getVisibleStoreBySlug(slug));
-  const [withRecord] = await withStoreRecords([store]);
+  const row = await getVisibleStoreBySlug(slug);
+  const store = toPublicStoreDto(toStoreDto(row));
+  const [withRecord] = await withStoreRecords([
+    { store, vendorId: String((row as { userId?: unknown }).userId ?? "") },
+  ]);
   return withRecord;
 }
 
@@ -335,7 +355,9 @@ export async function listPublicStores(query: PublicStoreQuery) {
   ]);
 
   return {
-    stores: await withStoreRecords(rows.map(toPublicStoreDto)),
+    stores: await withStoreRecords(
+      rows.map((row: any) => ({ store: toPublicStoreDto(row), vendorId: String(row.userId ?? "") }))
+    ),
     total,
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
   };
@@ -396,7 +418,7 @@ export async function listStores(query: StoreQuery) {
   }));
 
   return {
-    stores: await withStoreRecords(stores),
+    stores: await withStoreRecords(stores.map((store) => ({ store, vendorId: store.userId }))),
     total,
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
   };
