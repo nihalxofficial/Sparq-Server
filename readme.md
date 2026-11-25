@@ -623,6 +623,19 @@ cancel. It is idempotent (the filter requires an unreversed row), so a repeated
 cancel cannot refund twice. A seller-group rejection does **not** release it; only a
 real order cancellation does.
 
+### Seller Notifications
+
+A seller gets the same two channels the store team does — a line in their bell and
+an email to the address on their account. They are notified when:
+
+- a **new order** is placed (their own group of it),
+- the order **changes status** (processing, shipped, delivered, cancelled),
+- a **review** is posted on one of their products,
+- a **plan or payment** event happens (subscription, renewal, purchase).
+
+Every notification is best-effort: a mail or feed problem never fails the order,
+review or payment that caused it.
+
 ### Featured Promotions
 
 **Two Kinds:**
