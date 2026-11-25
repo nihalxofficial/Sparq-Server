@@ -1,4 +1,55 @@
-import { notifyUser, recordActivity } from "../activity/activity.service";
+import { notifyUser, recordActivity, type PersonalActivityType } from "../activity/activity.service";
+import { User } from "../user/user.model";
+import { sendMail } from "../../utils/mailer";
+
+/** Escapes text before it goes into an email body. */
+function escapeHtml(value: string): string {
+  return String(value).replace(
+    /[&<>"']/g,
+    (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!
+  );
+}
+
+/**
+ * One event for a seller: a line in their bell and, when a subject is given, an
+ * email to the address on their account. Both are best-effort — a notification
+ * must never fail the action that caused it.
+ */
+export async function notifyVendor(params: {
+  userId: string;
+  type: PersonalActivityType;
+  title: string;
+  detail?: string;
+  ref: string;
+  emailSubject?: string;
+}) {
+  await notifyUser({
+    userId: params.userId,
+    role: "vendor",
+    type: params.type,
+    title: params.title,
+    detail: params.detail || "",
+    ref: params.ref,
+  });
+
+  if (!params.emailSubject) return;
+  try {
+    const user = await User.findById(params.userId).select("email").lean();
+    const to = (user as { email?: string } | null)?.email;
+    if (!to) return;
+    await sendMail({
+      to,
+      subject: params.emailSubject,
+      html: `<div style="font-family:Arial,sans-serif;color:#1e293b">
+        <h2 style="margin:0 0 8px">${escapeHtml(params.title)}</h2>
+        ${params.detail ? `<p style="margin:0 0 12px">${escapeHtml(params.detail)}</p>` : ""}
+        <p style="margin:0;color:#64748b;font-size:13px">Open your vendor dashboard to see it.</p>
+      </div>`,
+    });
+  } catch (err) {
+    console.error("[vendor-notify] email failed:", (err as Error).message);
+  }
+}
 
 /**
  * Every marketplace notification, in one place.

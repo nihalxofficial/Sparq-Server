@@ -36,6 +36,7 @@ import {
 import { sellingPriceOf } from "../product/product.service";
 import { roundMoney } from "../../utils/money";
 import { paginate, sortBy, searchOr, where } from "../../utils/query";
+import { notifyVendor } from "../vendor/vendor.notifications";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -671,6 +672,21 @@ export async function createOrder(data: CreateOrderInput, userId: string) {
   // nothing.
   await notifyOrderPlaced(order);
 
+  // Each seller is told their part is in — one line in their bell and an email.
+  const sellerGroups = await VendorOrder.find({ orderId: order._id })
+    .select("vendorId orderNumber customerName city items")
+    .lean();
+  for (const group of sellerGroups) {
+    await notifyVendor({
+      userId: String(group.vendorId),
+      type: "vendor_order",
+      title: `New order ${group.orderNumber || shortNumber}`,
+      detail: `${group.customerName || "Customer"} · ${group.items?.length ?? 0} item(s)${group.city ? ` · ${group.city}` : ""}`,
+      ref: orderRef,
+      emailSubject: `New order ${group.orderNumber || shortNumber}`,
+    });
+  }
+
   return order;
 }
 
@@ -1053,6 +1069,22 @@ export async function updateOrderStatus(
   // The customer is told about every stage they can see, after the commit.
   if (statusChanged) {
     await notifyOrderStatusChanged(updated, data.orderStatus);
+  }
+
+  // The sellers are told the same, so their board and inbox agree with the
+  // customer's.
+  if (statusChanged) {
+    const vendorIds = await VendorOrder.find({ orderId: updated._id }).distinct("vendorId");
+    for (const vendorId of vendorIds) {
+      await notifyVendor({
+        userId: String(vendorId),
+        type: "vendor_order",
+        title: `Order ${shortOrderNumber(updated._id)} ${data.orderStatus}`,
+        detail: `The order is now ${data.orderStatus}.`,
+        ref: updated._id.toString(),
+        emailSubject: `Order ${shortOrderNumber(updated._id)} ${data.orderStatus}`,
+      });
+    }
   }
 
   return updated;

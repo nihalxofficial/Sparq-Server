@@ -7,6 +7,7 @@ import { CreateReviewInput, UpdateReviewInput, GetReviewsQuery } from "./review.
 import { ApiError } from "../../utils/apiError";
 import { idQuery } from "../../utils/ids";
 import { escapeRegex } from "../../utils/regex";
+import { notifyVendor } from "../vendor/vendor.notifications";
 import { isAdminRole } from "../../utils/roles";
 import { recordActivity } from "../activity/activity.service";
 
@@ -243,6 +244,19 @@ export async function createReview(data: CreateReviewInput, userId: string) {
     detail: reviewSummary(review.rating, product?.title),
     ref: review._id.toString(),
   });
+
+  // The seller is told about the review on their own product — bell and email.
+  const sellerId = (product as any)?.vendorId || (product as any)?.ownerId;
+  if (sellerId) {
+    await notifyVendor({
+      userId: String(sellerId),
+      type: "vendor_review",
+      title: `New ${review.rating}-star review on ${product?.title}`,
+      detail: review.comment,
+      ref: review._id.toString(),
+      emailSubject: `New review on ${product?.title}`,
+    });
+  }
 
   return formatReview(
     { ...review.toObject(), createdAt: (review as any).createdAt },
