@@ -64,6 +64,7 @@ export function toVendorOrderDto(row: any) {
       image: item.image || item.productId?.image || "",
     })),
     subtotal: Number(row.subtotal) || 0,
+      couponDiscount: Number(row.couponDiscount) || 0,
     customerName: row.customerName || parent?.shippingAddress?.fullName || "",
     customerPhone: row.customerPhone || parent?.shippingAddress?.phone || "",
     city: row.city || parent?.shippingAddress?.city || "",

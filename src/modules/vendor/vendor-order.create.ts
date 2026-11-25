@@ -1,5 +1,6 @@
 import { Types, type ClientSession } from "mongoose";
 import { VendorOrder, type VendorOrderStatus } from "./vendor-order.model";
+import { roundMoney } from "../../utils/money";
 
 /**
  * Splits a freshly placed checkout into one row per seller.
@@ -19,7 +20,11 @@ function shortOrderNumber(id: unknown): string {
 }
 
 /** Groups the order's lines by seller and writes one row for each. */
-export async function createVendorOrdersForOrder(order: any, session?: ClientSession) {
+export async function createVendorOrdersForOrder(
+  order: any,
+  session?: ClientSession,
+  coupon?: { vendorId?: string | null; discount?: number }
+) {
   const groups = new Map<
     string,
     { storeId: string | null; items: any[]; subtotal: number }
@@ -49,20 +54,31 @@ export async function createVendorOrdersForOrder(order: any, session?: ClientSes
 
   if (groups.size === 0) return [];
 
-  const rows = [...groups.entries()].map(([vendorId, group]) => ({
-    orderId: order._id,
-    vendorId,
-    storeId: group.storeId,
-    orderNumber: shortOrderNumber(order._id),
-    customerName: order.shippingAddress?.fullName || "",
-    customerPhone: order.shippingAddress?.phone || "",
-    city: order.shippingAddress?.city || "",
-    paymentMethod: order.paymentMethod || "",
-    items: group.items,
-    subtotal: group.subtotal,
-    status: "pending" as const,
-    history: [{ status: "pending" as const, at: new Date(), note: "Order placed" }],
-  }));
+  const rows = [...groups.entries()].map(([vendorId, group]) => {
+    // A seller's own code is paid for by that seller: its discount comes off
+    // their group. An admin code leaves every group whole, so the store takes
+    // that discount instead.
+    const vendorDiscount =
+      coupon?.vendorId && coupon.vendorId === vendorId
+        ? Math.min(Number(coupon.discount) || 0, group.subtotal)
+        : 0;
+
+    return {
+      orderId: order._id,
+      vendorId,
+      storeId: group.storeId,
+      orderNumber: shortOrderNumber(order._id),
+      customerName: order.shippingAddress?.fullName || "",
+      customerPhone: order.shippingAddress?.phone || "",
+      city: order.shippingAddress?.city || "",
+      paymentMethod: order.paymentMethod || "",
+      items: group.items,
+      subtotal: roundMoney(group.subtotal - vendorDiscount),
+      couponDiscount: vendorDiscount,
+      status: "pending" as const,
+      history: [{ status: "pending" as const, at: new Date(), note: "Order placed" }],
+    };
+  });
 
   // `create` with a session keeps the groups inside the checkout's transaction;
   // the unique (order, vendor) index turns a replay into a duplicate-key write

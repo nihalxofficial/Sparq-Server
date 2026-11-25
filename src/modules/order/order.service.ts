@@ -470,6 +470,8 @@ async function priceCouponCode(
     couponId: String(outcome.coupon._id),
     code: outcome.coupon.code as string,
     discount: outcome.discount,
+    // Who pays for the code: a seller's own code comes off that seller's group.
+    vendorId: outcome.coupon.vendorId ? String(outcome.coupon.vendorId) : null,
   };
 }
 
@@ -587,7 +589,11 @@ export async function createOrder(data: CreateOrderInput, userId: string) {
 
     // One row per seller, inside the same unit of work: the customer pays for
     // one checkout, each seller gets their own fulfilment record from it.
-    await createVendorOrdersForOrder(order, session);
+    await createVendorOrdersForOrder(
+      order,
+      session,
+      coupon ? { vendorId: coupon.vendorId, discount: couponDiscount } : undefined
+    );
 
     for (const item of data.items) {
       // The decrement carries its own stock guard, so two orders cannot both

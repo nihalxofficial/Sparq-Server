@@ -59,7 +59,10 @@ const vendorOrderSchema = new Schema(
     paymentMethod: { type: String, default: "" },
 
     items: { type: [vendorOrderItemSchema], default: [] },
+    /** What the seller is owed: the lines total minus any seller-coupon discount. */
     subtotal: { type: Number, default: 0 },
+    /** The part of a seller's own coupon that came off this group's total. */
+    couponDiscount: { type: Number, default: 0 },
 
     status: {
       type: String,
