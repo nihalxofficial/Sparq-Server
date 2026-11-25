@@ -628,9 +628,10 @@ real order cancellation does.
 The store team gets a shared-feed line **and an email** for the events it acts on:
 a new order, every order status change, a review, a vendor or rider application,
 a plan/payment, a product submitted for review, and any delivery problem. Emails
-go to the store inbox — `supportEmail` in Site Settings, or the `STORE_INBOX`
-environment variable. Like the seller notices, they are best-effort: a mail
-problem never fails the order or review that caused them.
+go to the store's **general inbox** — `contactEmail` in Site Settings, or the
+`CONTACT_INBOX` environment variable (falling back to `supportEmail`/`STORE_INBOX`)
+— so support mail stays separate. Like the seller notices, they are best-effort: a
+mail problem never fails the order or review that caused them.
 
 ### Seller Notifications
 

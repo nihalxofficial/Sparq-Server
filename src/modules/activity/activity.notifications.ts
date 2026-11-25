@@ -317,11 +317,11 @@ export async function notifyAdminDeliveryEmail(params: {
   actionPath?: string;
 }) {
   try {
-    const { supportInbox, brand } = await getMailIdentity();
-    if (!supportInbox) return;
+    const { contactInbox, brand } = await getMailIdentity();
+    if (!contactInbox) return;
 
     await sendUpdateEmail({
-      to: supportInbox,
+      to: contactInbox,
       heading: params.heading,
       intro: params.intro,
       orderNumber: params.orderNumber,
@@ -337,11 +337,13 @@ export async function notifyAdminDeliveryEmail(params: {
 }
 
 /**
- * Any store-team event by email, to the same inbox the delivery notices use.
+ * Any store-team event by email, to the store's general inbox.
  *
  * The store team lives in the dashboard, not in a mail client, so a new order or
- * a fresh review has to reach the shared inbox to be noticed. Same template,
- * same best-effort rule: a mail problem never fails the action.
+ * a fresh review has to reach the shared inbox to be noticed. This goes to the
+ * general/contact address (falling back inside `getMailIdentity`), not the
+ * support address, so customer support mail stays separate. Same template and
+ * best-effort rule: a mail problem never fails the action.
  */
 export async function notifyAdminEmail(params: {
   heading: string;
@@ -352,9 +354,22 @@ export async function notifyAdminEmail(params: {
   actionLabel?: string;
   actionPath?: string;
 }) {
-  return notifyAdminDeliveryEmail({
-    actionLabel: "Open dashboard",
-    actionPath: "/dashboard/admin",
-    ...params,
-  });
+  try {
+    const { contactInbox, brand } = await getMailIdentity();
+    if (!contactInbox) return;
+
+    await sendUpdateEmail({
+      to: contactInbox,
+      heading: params.heading,
+      intro: params.intro,
+      orderNumber: params.orderNumber,
+      rows: params.rows,
+      note: params.note,
+      actionLabel: params.actionLabel || "Open dashboard",
+      actionPath: params.actionPath || "/dashboard/admin",
+      brand,
+    });
+  } catch (err) {
+    console.error("[activity] Admin email failed:", (err as Error).message);
+  }
 }
