@@ -1073,3 +1073,14 @@ MIT License - See [LICENSE](LICENSE)
 ⚡ Sparq Server - Powering modern e-commerce
 
 </div>
+
+---
+
+## Recent Changes
+
+- **Customer cancel (limited):** a customer can cancel their own order, with a reason, while it is still being packed — before it ships and before a rider holds it. The old "received / not received / cancelled" report is gone.
+- **Rider requests:** the request email is informational only (no accept/decline link). The rider answers from the table or the delivery page, which now shows a numbered **collection route** — every selling shop's warehouse plus the store (admin) warehouse for store-owned items.
+- **Warehouse required:** a warehouse address is now required on a seller's store profile and on the store team's admin profile, because riders collect from it.
+- **Notification preferences:** each account has an account-wide **bell** switch and **email** switch (customer and admin). The bell gates notifications on every dashboard the account can open; the email switch gates mail to that address.
+- **Subscription payment:** a paid plan now runs through the animated gateway flow instead of a toast.
+- **Plan exports:** Premium exports the **PDF**; Advanced exports **CSV + PDF**.
