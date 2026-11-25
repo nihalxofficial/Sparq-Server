@@ -285,8 +285,13 @@ GET    /api/coupons/:id             👑  Get coupon details
 POST   /api/coupons                 👑  Create store coupon
 PATCH  /api/coupons/:id             👑  Update store coupon
 DELETE /api/coupons/:id             👑  Delete store coupon
+PATCH  /api/coupons/:id/moderate    👑  Stop or resume a vendor's code
 POST   /api/coupons/validate        🔐  Validate coupon code
 ```
+
+A vendor's code belongs to the shop. The seller's own coupons desk can create,
+edit, stop and delete it; the store team's moderation can only **block (stop)**
+or **unblock** a seller's code — never delete it.
 
 #### Featured Promotions (Admin)
 
