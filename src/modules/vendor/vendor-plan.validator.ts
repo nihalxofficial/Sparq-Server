@@ -18,7 +18,7 @@ const planFields = z.object({
   activeCoupons: z.coerce.number().int().min(0).optional(),
   analytics: z.enum(["basic", "detailed", "advanced"]).optional(),
   salesReports: z.enum(["basic", "advanced"]).optional(),
-  exports: z.enum(["none", "csv", "csv+pdf"]).optional(),
+  exports: z.enum(["none", "csv", "pdf", "csv+pdf"]).optional(),
   storeCustomization: z.enum(["basic", "enhanced", "full"]).optional(),
   promotionalCampaigns: z.enum(["none", "limited", "priority"]).optional(),
   storeVisibility: z.enum(["standard", "enhanced", "priority"]).optional(),

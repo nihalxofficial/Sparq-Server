@@ -24,7 +24,7 @@ const subscriptionPlanSchema = new Schema(
 
     analytics: { type: String, enum: ["basic", "detailed", "advanced"], required: true },
     salesReports: { type: String, enum: ["basic", "advanced"], required: true },
-    exports: { type: String, enum: ["none", "csv", "csv+pdf"], required: true },
+    exports: { type: String, enum: ["none", "csv", "pdf", "csv+pdf"], required: true },
     storeCustomization: { type: String, enum: ["basic", "enhanced", "full"], required: true },
     promotionalCampaigns: { type: String, enum: ["none", "limited", "priority"], required: true },
     storeVisibility: { type: String, enum: ["standard", "enhanced", "priority"], required: true },

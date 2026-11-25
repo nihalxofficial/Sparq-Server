@@ -48,22 +48,22 @@ const BLANK_PLAN = {
 } satisfies Omit<VendorPlan, "id">;
 
 /**
- * Reads the export rung from rows written before the three rungs existed.
+ * Reads the export rung, folding rows written before the rungs changed.
  *
- * The old ladder had two values, and every seeded plan carried one of them:
- * free "limited", Premium "full", Advanced "full". "Full" there meant a
- * complete file, not a PDF — so only the top rung keeps the PDF, and Premium,
- * which buys a spreadsheet and nothing else, lands on the CSV rung.
+ * The ladder now runs: free gets no file, Premium builds the PDF, Advanced adds
+ * the CSV. Older seeds carried a two-value ladder ("limited"/"full"), so a row
+ * is clamped onto the rung its plan sells rather than trusted verbatim.
  */
 function normalizeExports(value: unknown, planId: string): PlanExports {
-  // Premium buys the spreadsheet and nothing else; only the top rung builds a
-  // PDF. A row that still says csv+pdf on premium is an older edit, and the
-  // report buttons trust this read, so the rung is clamped here rather than on
-  // every screen that asks.
-  if (planId === "premium" && value === "csv+pdf") return "csv";
-  if (value === "none" || value === "csv" || value === "csv+pdf") return value;
-  if (value === "full") return planId === "advanced" ? "csv+pdf" : "csv";
-  if (value === "limited") return planId === "free" ? "none" : "csv";
+  if (planId === "free") return "none";
+  if (planId === "advanced") return "csv+pdf";
+  // Premium sells the PDF; a row still saying csv/csv+pdf is an older edit.
+  if (planId === "premium") return value === "none" ? "none" : "pdf";
+
+  // A custom plan id keeps whatever it stored, accepting the new "pdf" rung.
+  if (value === "none" || value === "csv" || value === "pdf" || value === "csv+pdf") return value;
+  if (value === "full") return "csv+pdf";
+  if (value === "limited") return "none";
   return "none";
 }
 
@@ -287,8 +287,10 @@ export async function updatePlan(
   }
 
   // The same clamp the read applies, so a saved plan cannot sit in the database
-  // offering Premium a report this rung never sells.
-  if (planId === "premium" && allowed.exports === "csv+pdf") allowed.exports = "csv";
+  // offering Premium a report this rung never sells (its rung is the PDF).
+  if (planId === "premium" && (allowed.exports === "csv" || allowed.exports === "csv+pdf")) {
+    allowed.exports = "pdf";
+  }
 
   allowed.updatedBy = adminId ?? null;
 

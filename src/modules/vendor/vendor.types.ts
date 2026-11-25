@@ -159,11 +159,12 @@ export interface VendorPlanLimits {
 /**
  * What a plan may export.
  *
- * Three rungs, not two: the free shop gets no file, the paid plan writes the
- * CSV, and the top plan also builds the PDF — exactly what the report screen
- * offers and what the pricing cards promise.
+ * The free shop gets no file, Premium builds the PDF, and the top plan also
+ * writes the CSV — exactly what the report screen offers and what the pricing
+ * cards promise. "csv" stays in the list so a row written before the rungs
+ * changed still reads; `normalizeExports` folds it onto the right rung.
  */
-export const PLAN_EXPORTS = ["none", "csv", "csv+pdf"] as const;
+export const PLAN_EXPORTS = ["none", "csv", "pdf", "csv+pdf"] as const;
 export type PlanExports = (typeof PLAN_EXPORTS)[number];
 
 export interface VendorPlan extends VendorPlanLimits {
@@ -234,7 +235,7 @@ export const DEFAULT_VENDOR_PLANS: Record<string, VendorPlan> = {
     activeCoupons: 10,
     analytics: "detailed",
     salesReports: "advanced",
-    exports: "csv",
+    exports: "pdf",
     storeCustomization: "enhanced",
     promotionalCampaigns: "limited",
     storeVisibility: "enhanced",
@@ -243,7 +244,7 @@ export const DEFAULT_VENDOR_PLANS: Record<string, VendorPlan> = {
       "50 active products",
       "3 featured products for 7 days",
       "10 active coupons",
-      "Detailed analytics and CSV reports",
+      "Detailed analytics and PDF reports",
       "Enhanced storefront visibility",
       "Priority support",
     ],
