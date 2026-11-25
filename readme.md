@@ -424,7 +424,11 @@ A banner is a picture and a destination. Its `type` — `product`, `category`,
 at read time. The homepage read returns only banners that are published and
 inside their date window, and skips any whose product, category or shop has
 since been removed. Status (draft / scheduled / active / expired) is derived
-from the publish switch and the dates, never stored.
+from the publish switch and the dates, never stored. A `product` banner's read
+also carries the linked product's `price`, `originalPrice` and `offerEndDate`,
+so the hero can show the live deal without a second request. Image URLs are
+stored exactly as uploaded (the storefront hosts them on ImgBB); the server
+never re-hosts artwork.
 
 #### Files
 
