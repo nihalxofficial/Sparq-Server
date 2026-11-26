@@ -704,6 +704,14 @@ export async function updateProduct(id: string, data: UpdateProductInput) {
   const current = await Product.findById(id);
   if (!current) throw new ApiError(404, "Product not found");
 
+  // A changed slug must stay unique. Create answers a clash with a clear 409;
+  // an update has to say the same thing instead of tripping the unique index
+  // and answering with an unreadable duplicate-key 500.
+  if (data.slug && data.slug !== current.slug) {
+    const clash = await Product.exists({ slug: data.slug, _id: { $ne: current._id } });
+    if (clash) throw new ApiError(409, "Slug already in use");
+  }
+
   // Only the fields that were sent are in `data`, so the two warranty fields are
   // judged on the combination the product will end up with.
   const nextType = data.warrantyType ?? current.warrantyType;
