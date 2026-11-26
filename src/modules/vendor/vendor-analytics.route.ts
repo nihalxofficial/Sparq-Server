@@ -8,5 +8,6 @@ const router = Router();
 router.use(requireAuth, requireRole("vendor"));
 
 router.get("/", controller.getMyAnalytics);
+router.get("/financials", controller.getMyFinancialAnalytics);
 
 export default router;
