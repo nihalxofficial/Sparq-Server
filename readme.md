@@ -165,6 +165,7 @@ Cart -> Order (parent)
 - Seller flow: `pending -> accepted -> processing -> ready_for_shipment`, or `rejected` with a reason.
 - Parent `shipped` / `delivered` / `cancelled` is pushed down to every group, with a guard list so a rejected or delivered group is never overwritten.
 - A seller's own coupon comes off their group; an admin coupon leaves every group whole.
+- Each group freezes the plan, commission and unit cost it was sold under, so changing a plan or a cost never re-prices a completed order.
 
 ### Loyalty Points
 
