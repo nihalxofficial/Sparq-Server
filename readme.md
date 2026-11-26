@@ -16,17 +16,18 @@ Express 5 + MongoDB backend powering a multi-vendor store with loyalty points, r
 ## 📖 Table of Contents
 
 1. [What This Server Does](#what-this-server-does)
-2. [Architecture](#architecture)
-3. [Access & Security](#access--security)
-4. [Business Logic](#business-logic)
-5. [Scheduled Jobs](#scheduled-jobs)
-6. [Demo Admin Mode](#demo-admin-mode)
-7. [Tech Stack](#tech-stack)
-8. [Quick Start](#quick-start)
-9. [Environment Setup](#environment-setup)
-10. [Deployment](#deployment)
-11. [Development](#development)
-12. [Support & Links](#support--links)
+2. [Recent Changes](#recent-changes)
+3. [Architecture](#architecture)
+4. [Access & Security](#access--security)
+5. [Business Logic](#business-logic)
+6. [Scheduled Jobs](#scheduled-jobs)
+7. [Demo Admin Mode](#demo-admin-mode)
+8. [Tech Stack](#tech-stack)
+9. [Quick Start](#quick-start)
+10. [Environment Setup](#environment-setup)
+11. [Deployment](#deployment)
+12. [Development](#development)
+13. [Support & Links](#support--links)
 
 ---
 
@@ -56,6 +57,17 @@ Request -> verify JWT -> check role -> validate (Zod) -> controller -> service -
               |              |              |
              401            403            400
 ```
+
+---
+
+## Recent Changes
+
+- **Frozen order figures** — a group's commission rate, delivery cover and per-line cost are copied onto the order at checkout, so a plan or cost change never re-prices a completed order.
+- **Refund on any cancellation** — cancelling an order by anyone marks its payment `refunded`, not `failed`.
+- **Notifications run after the response** — the feed and mail fan-out no longer holds the order response, so a slow inbox cannot make a placed order look like a failure.
+- **One daily cron** — the seven sweeps run as the single `/api/cron/daily` job for Vercel Hobby; the individual routes stay for a Pro plan.
+- **Warranty settled for a seller's listing** — a zero period is stored as No warranty, the same rule the admin desk uses.
+- **Clear slug clash** — a duplicate slug on update answers `409` instead of a database error.
 
 ---
 
@@ -205,7 +217,7 @@ A product may carry one warranty code — `manufacturer-warranty`, `seller-warra
 - **Store team** — a feed line and an email for a new order, every status change, a review, an application, a plan/payment, a product submitted for review, and delivery problems.
 - **Seller** — a feed line and an email for their own orders, status changes, reviews and plan events.
 - Store-team email goes to the **general inbox** (`contactEmail`, or `CONTACT_INBOX`, falling back to `supportEmail`).
-- Every notification is **best-effort**: a mail or feed problem never fails the order, review or payment that caused it.
+- Every notification is **best-effort**: a mail or feed problem never fails the order, review or payment that caused it, and the fan-out runs **after** the response so a slow inbox never delays an order.
 - Each account can switch the bell and the email off independently.
 
 ### Security
