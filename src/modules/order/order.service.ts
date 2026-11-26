@@ -263,17 +263,12 @@ async function applyCancellation(
   previousStatus: string,
   session?: ClientSession
 ) {
-  // A payment that never landed is failed; one that already went through is
-  // handed back. Cash on delivery sat at "pending", so cancelling before the
-  // door simply fails it; an online payment that read "success" becomes a refund
-  // to the wallet the buyer used.
+  // Whoever calls the order off — the customer, a seller rejecting their slice,
+  // or the store team — the order's payment is marked refunded, so the buyer's
+  // record reads the same after any cancellation. A row already refunded is left
+  // alone, so a repeated cancellation is a no-op.
   await Transaction.updateMany(
-    { orderId, status: "pending" },
-    { $set: { status: "failed" } },
-    { session }
-  );
-  await Transaction.updateMany(
-    { orderId, status: "success" },
+    { orderId, status: { $ne: "refunded" } },
     { $set: { status: "refunded" } },
     { session }
   );

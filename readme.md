@@ -149,7 +149,7 @@ confirmed -> processing -> shipped -> delivered
 ```
 
 - **On delivery** — settle the payment, credit points and re-check the tier, update sell counts.
-- **On cancellation** — fail an unpaid payment / refund a paid one, restore stock once, refund spent points, revoke earned points, hand the coupon's use back.
+- **On cancellation** — mark the payment refunded (whoever cancels), restore stock once, refund spent points, revoke earned points, hand the coupon's use back.
 
 ### Multi-Vendor Order Splitting
 
@@ -369,7 +369,7 @@ This build has **no payment gateway** — online payment is simulated.
 
 - Every non-COD payment is stored with `isDemo: true` and marked `success` at checkout; cash on delivery starts `pending` and settles at the door.
 - A wallet transaction id cannot be reused.
-- Statuses are `pending`, `success`, `failed` and `refunded`; cancelling fails an unpaid payment and marks a paid one as `refunded`.
+- Statuses are `pending`, `success`, `failed` and `refunded`; cancelling an order — by anyone — marks its payment `refunded`.
 
 ---
 
