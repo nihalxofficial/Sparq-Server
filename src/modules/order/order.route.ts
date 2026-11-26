@@ -8,6 +8,8 @@ import { requireRole } from "../../middlewares/role.middleware";
 const router = Router();
 
 router.get("/", requireAuth, orderController.getOrders);
+router.get("/admin/financial-analytics", requireAuth, requireRole("admin"), orderController.getAdminFinancialAnalytics);
+router.get("/:id/financial-breakdown", requireAuth, requireRole("admin"), orderController.getAdminOrderFinancialBreakdown);
 router.get("/:id", requireAuth, orderController.getOrderById);
 router.post("/", requireAuth, validate(createOrderSchema), orderController.createOrder);
 router.patch("/:id/status", requireAuth, requireRole("admin"), validate(updateOrderStatusSchema), orderController.updateOrderStatus);

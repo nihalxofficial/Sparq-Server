@@ -3,6 +3,7 @@ import { apiResponse } from "../../utils/apiResponse";
 import { parseQuery } from "../../utils/validate";
 import { assertOwnerOrAdmin, assertShopper, currentUserId, scopedUserId } from "../../utils/authz";
 import * as orderService from "./order.service";
+import * as orderFinancialsService from "./order-financials.service";
 import { getOrdersQuerySchema } from "./order.validator";
 
 export const createOrder = catchAsync(async (req, res) => {
@@ -46,4 +47,22 @@ export const cancelMyOrder = catchAsync(async (req, res) => {
     req.user
   );
   apiResponse(res, 200, order, "Order cancelled");
+});
+
+export const getAdminFinancialAnalytics = catchAsync(async (req, res) => {
+  const result = await orderFinancialsService.getAdminOrderFinancialAnalytics({
+    days: req.query.days ? Number(req.query.days) : undefined,
+    status: typeof req.query.status === "string" ? req.query.status : undefined,
+    search: typeof req.query.search === "string" ? req.query.search : undefined,
+    page: req.query.page ? Number(req.query.page) : undefined,
+    limit: req.query.limit ? Number(req.query.limit) : undefined,
+  });
+  apiResponse(res, 200, result, "Order financial analytics fetched successfully");
+});
+
+export const getAdminOrderFinancialBreakdown = catchAsync(async (req, res) => {
+  const breakdown = await orderFinancialsService.getAdminOrderFinancialBreakdown(
+    req.params.id as string
+  );
+  apiResponse(res, 200, breakdown, "Order financial breakdown fetched successfully");
 });
