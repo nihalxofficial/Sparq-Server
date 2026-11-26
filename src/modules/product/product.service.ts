@@ -257,7 +257,7 @@ export function formatProduct(product: any, options: FormatProductOptions = {}) 
  *     because cover with no end date is not something anyone can honour.
  *   - "Other" is whatever the terms text says, so it needs that text.
  */
-function warrantyFieldsFor(
+export function warrantyFieldsFor(
   data: { warrantyTerms?: string },
   months: number | undefined,
   type: string | undefined

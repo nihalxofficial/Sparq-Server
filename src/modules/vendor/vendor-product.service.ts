@@ -7,6 +7,7 @@ import {
   formatProduct,
   getRatingsMap,
   realizedSalesFor,
+  warrantyFieldsFor,
 } from "../product/product.service";
 import { Category } from "../category/category.model";
 import { SubCategory } from "../subcategory/subcategory.model";
@@ -251,6 +252,15 @@ export async function createMyProduct(userId: string, input: CreateVendorProduct
     ? await uniqueSlug(input.slug)
     : await uniqueSlug(input.title);
 
+  // A listing with no warranty is stored as "No warranty": the two fields are
+  // settled together here exactly as the admin desk does, so a zero period never
+  // leaves a covering type behind on the product page.
+  const warranty = warrantyFieldsFor(
+    { warrantyTerms: input.warrantyTerms },
+    input.warrantyPeriodMonths,
+    input.warrantyType
+  );
+
   const product = await Product.create({
     ownerId: userId,
     vendorId: userId,
@@ -276,9 +286,9 @@ export async function createMyProduct(userId: string, input: CreateVendorProduct
     description: input.description ?? "",
     specifications: input.specifications ?? {},
     offerEndDate: input.offerEndDate ?? undefined,
-    warrantyPeriodMonths: input.warrantyPeriodMonths ?? 0,
-    warrantyType: input.warrantyType ?? "manufacturer-warranty",
-    warrantyTerms: input.warrantyTerms ?? undefined,
+    warrantyPeriodMonths: warranty.warrantyPeriodMonths,
+    warrantyType: warranty.warrantyType,
+    warrantyTerms: warranty.warrantyPeriodMonths > 0 ? input.warrantyTerms : undefined,
     variantOptions: input.variantOptions ?? [],
     shippingInfo: input.shippingInfo ?? {},
   });
@@ -378,6 +388,18 @@ export async function updateMyProduct(
   for (const field of fields) {
     if (input[field] !== undefined) update[field] = input[field];
   }
+
+  // Settle the warranty fields together, the same rule the admin desk uses, so
+  // "no warranty" is stored as No warranty rather than a covering type with a
+  // zero period. Judged on the combination the product will end up with.
+  const warranty = warrantyFieldsFor(
+    { warrantyTerms: (update.warrantyTerms as string) ?? product.warrantyTerms },
+    (update.warrantyPeriodMonths as number) ?? product.warrantyPeriodMonths,
+    (update.warrantyType as string) ?? product.warrantyType
+  );
+  update.warrantyType = warranty.warrantyType;
+  update.warrantyPeriodMonths = warranty.warrantyPeriodMonths;
+  if (warranty.warrantyPeriodMonths <= 0) update.warrantyTerms = undefined;
 
   // A new title is a new address only while the product has never been live;
   // a published product keeps its slug so existing links and orders survive.
