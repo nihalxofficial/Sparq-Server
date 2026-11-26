@@ -659,14 +659,13 @@ export async function getAdminOrderFinancialAnalytics(query: {
   const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
 
   const since = new Date(Date.now() - days * 86_400_000);
-  const filter: Record<string, unknown> = {
-    createdAt: { $gte: since },
-  };
+  const prevSince = new Date(since.getTime() - days * 86_400_000);
+  const baseFilter: Record<string, unknown> = {};
 
   if (query.status && query.status !== "all") {
-    filter.orderStatus = query.status;
+    baseFilter.orderStatus = query.status;
   } else {
-    filter.orderStatus = { $ne: "cancelled" };
+    baseFilter.orderStatus = { $ne: "cancelled" };
   }
 
   if (query.search?.trim()) {
@@ -678,17 +677,27 @@ export async function getAdminOrderFinancialAnalytics(query: {
     if (Types.ObjectId.isValid(q)) {
       or.push({ _id: new Types.ObjectId(q) });
     }
-    filter.$or = or;
+    baseFilter.$or = or;
   }
 
-  const allOrders = await Order.find(filter)
-    .populate("userId", "name email")
-    .sort({ createdAt: -1 })
-    .limit(500)
-    .lean();
+  const [allOrders, prevOrders] = await Promise.all([
+    Order.find({ ...baseFilter, createdAt: { $gte: since } })
+      .populate("userId", "name email")
+      .sort({ createdAt: -1 })
+      .limit(500)
+      .lean(),
+    Order.find({ ...baseFilter, createdAt: { $gte: prevSince, $lt: since } })
+      .sort({ createdAt: -1 })
+      .limit(500)
+      .lean(),
+  ]);
 
-  const allBreakdowns = await buildBreakdownsForOrders(allOrders);
+  const [allBreakdowns, prevBreakdowns] = await Promise.all([
+    buildBreakdownsForOrders(allOrders),
+    buildBreakdownsForOrders(prevOrders),
+  ]);
   const summary = summarizeBreakdowns(allBreakdowns);
+  const previousSummary = summarizeBreakdowns(prevBreakdowns);
 
   const total = allBreakdowns.length;
   const start = (page - 1) * limit;
@@ -697,6 +706,7 @@ export async function getAdminOrderFinancialAnalytics(query: {
   return {
     days,
     summary,
+    previousSummary,
     orders,
     pagination: {
       page,
@@ -740,32 +750,60 @@ export async function getVendorOrderFinancialAnalytics(
   const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
 
   const since = new Date(Date.now() - days * 86_400_000);
+  const prevSince = new Date(since.getTime() - days * 86_400_000);
   const vendorObjId = new Types.ObjectId(userId);
 
-  const vendorOrders = await VendorOrder.find({
-    vendorId: vendorObjId,
-    status: { $nin: ["cancelled", "rejected"] },
-    createdAt: { $gte: since },
-  })
-    .select("orderId")
-    .lean();
+  const [vendorOrders, prevVendorOrders] = await Promise.all([
+    VendorOrder.find({
+      vendorId: vendorObjId,
+      status: { $nin: ["cancelled", "rejected"] },
+      createdAt: { $gte: since },
+    })
+      .select("orderId")
+      .lean(),
+    VendorOrder.find({
+      vendorId: vendorObjId,
+      status: { $nin: ["cancelled", "rejected"] },
+      createdAt: { $gte: prevSince, $lt: since },
+    })
+      .select("orderId")
+      .lean(),
+  ]);
 
   const orderIds = [...new Set(vendorOrders.map((v) => String(v.orderId)))].map(
     (id) => new Types.ObjectId(id)
   );
+  const prevOrderIds = [...new Set(prevVendorOrders.map((v) => String(v.orderId)))].map(
+    (id) => new Types.ObjectId(id)
+  );
 
-  const orders = orderIds.length
-    ? await Order.find({
-        _id: { $in: orderIds },
-        orderStatus: { $ne: "cancelled" },
-      })
-        .sort({ createdAt: -1 })
-        .limit(500)
-        .lean()
-    : [];
+  const [orders, prevOrders] = await Promise.all([
+    orderIds.length
+      ? Order.find({
+          _id: { $in: orderIds },
+          orderStatus: { $ne: "cancelled" },
+        })
+          .sort({ createdAt: -1 })
+          .limit(500)
+          .lean()
+      : [],
+    prevOrderIds.length
+      ? Order.find({
+          _id: { $in: prevOrderIds },
+          orderStatus: { $ne: "cancelled" },
+        })
+          .sort({ createdAt: -1 })
+          .limit(500)
+          .lean()
+      : [],
+  ]);
 
-  const allBreakdowns = await buildBreakdownsForOrders(orders, userId);
+  const [allBreakdowns, prevBreakdowns] = await Promise.all([
+    buildBreakdownsForOrders(orders, userId),
+    buildBreakdownsForOrders(prevOrders, userId),
+  ]);
   const summary = summarizeBreakdowns(allBreakdowns);
+  const previousSummary = summarizeBreakdowns(prevBreakdowns);
 
   const total = allBreakdowns.length;
   const start = (page - 1) * limit;
@@ -775,6 +813,7 @@ export async function getVendorOrderFinancialAnalytics(
     days,
     plan: { id: planState.plan.id, name: planState.plan.name },
     summary,
+    previousSummary,
     orders: pagedOrders,
     pagination: {
       page,
