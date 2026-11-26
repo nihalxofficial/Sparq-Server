@@ -35,6 +35,23 @@ export interface ProductFinancialRow {
   profitAfterDiscounts: number | null;
 }
 
+export interface OwnerFinancialGroup {
+  ownerKey: string;
+  ownerType: "admin" | "vendor";
+  ownerLabel: string;
+  itemsCount: number;
+  originalTotal: number;
+  soldTotal: number;
+  couponDiscount: number;
+  pointsDiscount: number;
+  customerPaid: number;
+  totalCost: number | null;
+  platformCommission: number;
+  riderPayout: number;
+  netProfit: number | null;
+  items: ProductFinancialRow[];
+}
+
 export interface OrderFinancialBreakdown {
   orderId: string;
   orderNumber: string;
@@ -72,6 +89,7 @@ export interface OrderFinancialBreakdown {
     toPlatform: number;
     productCost: number | null;
   };
+  ownerGroups: OwnerFinancialGroup[];
   items: ProductFinancialRow[];
 }
 
@@ -448,18 +466,92 @@ async function buildBreakdownsForOrders(
       ? cleanDecimal(Math.max(0, soldSum - couponSum - pointsSum) + scopedDeliveryCharge)
       : cleanDecimal(Number(order.totalAmount) || 0);
 
-    // Money flow
-    const vendorGrossPaid = cleanDecimal(
+    // Money flow: vendors receive their sold total minus their own vendor coupon,
+    // platform commission, and vendor-paid rider share (points are absorbed by platform).
+    const vendorNetGross = cleanDecimal(
       productRows
         .filter((r) => r.vendorId !== null)
-        .reduce((s, r) => s + r.finalCustomerPaid, 0)
+        .reduce((s, r) => {
+          const vo = r.vendorId ? voMap.get(`${orderId}:${r.vendorId}`) : null;
+          const voSub = Number(vo?.subtotal) || r.soldTotal;
+          const voDisc = Number(vo?.couponDiscount) || 0;
+          const vCoupon = voDisc > 0 && voSub > 0 ? cleanDecimal(voDisc * (r.soldTotal / voSub)) : 0;
+          return s + Math.max(0, r.soldTotal - vCoupon);
+        }, 0)
     );
     const toVendors = cleanDecimal(
-      Math.max(0, vendorGrossPaid - commissionSum - vendorRiderPayout)
+      Math.max(0, vendorNetGross - commissionSum - vendorRiderPayout)
     );
     const toRiders = scopedRiderPayout;
     const toPlatform = cleanDecimal(
       finalCustomerPaid - toVendors - toRiders
+    );
+
+    // Group product rows by owner (Platform/Admin vs each Vendor)
+    const groupedMap = new Map<string, ProductFinancialRow[]>();
+    for (const row of productRows) {
+      const key = row.vendorId ? `vendor:${row.vendorId}` : "admin";
+      const list = groupedMap.get(key) ?? [];
+      list.push(row);
+      groupedMap.set(key, list);
+    }
+
+    const ownerGroups: OwnerFinancialGroup[] = Array.from(groupedMap.entries()).map(
+      ([ownerKey, groupItems]) => {
+        const isAdminGroup = ownerKey === "admin";
+        const gOrig = cleanDecimal(groupItems.reduce((s, r) => s + r.originalTotal, 0));
+        const gSold = cleanDecimal(groupItems.reduce((s, r) => s + r.soldTotal, 0));
+        const gCoupon = cleanDecimal(groupItems.reduce((s, r) => s + r.couponDiscountAllocated, 0));
+        const gPoints = cleanDecimal(groupItems.reduce((s, r) => s + r.pointsValueAllocated, 0));
+        const gPaid = cleanDecimal(groupItems.reduce((s, r) => s + r.finalCustomerPaid, 0));
+        const gComm = cleanDecimal(groupItems.reduce((s, r) => s + r.platformCommission, 0));
+        const gRider = cleanDecimal(groupItems.reduce((s, r) => s + r.riderPayoutShare, 0));
+        const missingCost = groupItems.some((r) => r.totalCost == null);
+        const gCost = missingCost
+          ? null
+          : cleanDecimal(groupItems.reduce((s, r) => s + (r.totalCost ?? 0), 0));
+
+        let gNetProfit: number | null = null;
+        if (gCost != null) {
+          if (isAdminGroup) {
+            gNetProfit = cleanDecimal(gPaid - gCost - gRider);
+          } else {
+            const gVendorRider = cleanDecimal(
+              groupItems
+                .filter((r) => r.riderPayoutPayer === "Vendor")
+                .reduce((s, r) => s + r.riderPayoutShare, 0)
+            );
+            const gVendorNet = cleanDecimal(
+              groupItems.reduce((s, r) => {
+                const vo = r.vendorId ? voMap.get(`${orderId}:${r.vendorId}`) : null;
+                const voSub = Number(vo?.subtotal) || r.soldTotal;
+                const voDisc = Number(vo?.couponDiscount) || 0;
+                const vCoupon =
+                  voDisc > 0 && voSub > 0 ? cleanDecimal(voDisc * (r.soldTotal / voSub)) : 0;
+                return s + Math.max(0, r.soldTotal - vCoupon);
+              }, 0)
+            );
+            gNetProfit = cleanDecimal(gVendorNet - gCost - gComm - gVendorRider);
+          }
+        }
+
+        return {
+          ownerKey,
+          ownerType: isAdminGroup ? "admin" : "vendor",
+          ownerLabel: groupItems[0]?.ownerLabel || (isAdminGroup ? "Platform (Admin)" : "Vendor"),
+          itemsCount: groupItems.length,
+          originalTotal: gOrig,
+          soldTotal: gSold,
+          couponDiscount: gCoupon,
+          pointsDiscount: gPoints,
+          customerPaid: gPaid,
+          totalCost: gCost,
+          platformCommission: gComm,
+          riderPayout: gRider,
+          netProfit: gNetProfit,
+          items: groupItems,
+        };
+      }
     );
 
     let expectedProfitWithoutDiscounts: number | null = null;
@@ -523,6 +615,7 @@ async function buildBreakdownsForOrders(
         toPlatform,
         productCost: totalCost,
       },
+      ownerGroups,
       items: productRows,
     });
   }
