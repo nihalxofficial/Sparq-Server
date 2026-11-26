@@ -202,8 +202,27 @@ export interface CouponOwner {
   createdBy?: string | null;
 }
 
+async function assertAdminOwnProducts(productIds?: string[]) {
+  if (!productIds || productIds.length === 0) return;
+  const vendorProduct = await Product.findOne({
+    _id: { $in: productIds.map((id) => new Types.ObjectId(id)) },
+    vendorId: { $ne: null },
+  })
+    .select("title")
+    .lean();
+  if (vendorProduct) {
+    throw new ApiError(
+      400,
+      `Admin coupons can only target store-owned products ("${vendorProduct.title}" belongs to a vendor).`
+    );
+  }
+}
+
 export async function createCoupon(input: CreateCouponInput, owner: CouponOwner) {
   await assertCodeIsFree(input.code);
+  if (owner.ownerType === "admin") {
+    await assertAdminOwnProducts(input.productIds);
+  }
 
   const row = await Coupon.create({
     ...input,
@@ -260,6 +279,9 @@ export async function updateCoupon(
   vendorId?: string
 ) {
   const row = await loadForWrite(id, vendorId);
+  if (!vendorId && input.productIds) {
+    await assertAdminOwnProducts(input.productIds);
+  }
 
   if (input.code && input.code.toUpperCase() !== row.code) {
     await assertCodeIsFree(input.code, String(row._id));
@@ -416,12 +438,13 @@ export async function evaluateCoupon(input: {
     }
   }
 
-  // A vendor's code never reaches across the marketplace: only their own lines
-  // count, even when the basket also holds the platform's stock or another
-  // shop's products.
+  // Admin coupons only apply to platform-owned products (!line.vendorId);
+  // vendor coupons only apply to that vendor's own products.
   const ownerId = coupon.ownerType === "vendor" ? toIdString(coupon.vendorId) : "";
   const eligible = lines.filter(
-    (line) => (!ownerId || line.vendorId === ownerId) && lineMatchesScope(line, coupon)
+    (line) =>
+      (coupon.ownerType === "vendor" ? line.vendorId === ownerId : !line.vendorId) &&
+      lineMatchesScope(line, coupon)
   );
   const eligibleSubtotal = eligible.reduce((sum, line) => sum + line.price * line.quantity, 0);
 

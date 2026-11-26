@@ -192,7 +192,17 @@ async function buildBreakdownsForOrders(
     );
     const allocBase = orderSoldSubtotal > 0 ? orderSoldSubtotal : Number(order.subtotal) || 1;
 
+    const platformSoldSubtotal = rawItems.reduce((sum: number, item: any) => {
+      const prodDoc = productMap.get(String(item.productId || ""));
+      const hasVendor = Boolean(item.vendorId || prodDoc?.vendorId);
+      return hasVendor ? sum : sum + (Number(item.price) || 0) * (Number(item.quantity) || 0);
+    }, 0);
+
     const orderCouponDiscount = Number(order.couponDiscount) || 0;
+    const totalVendorCouponDiscount = [...voMap.entries()]
+      .filter(([key]) => key.startsWith(`${orderId}:`))
+      .reduce((sum, [, vo]) => sum + (Number(vo.couponDiscount) || 0), 0);
+    const adminCouponDiscount = Math.max(0, cleanDecimal(orderCouponDiscount - totalVendorCouponDiscount));
     const orderPointsDiscount = Number(order.pointsDiscount) || 0;
     const orderPointsRedeemed = Number(order.pointsRedeemed) || 0;
     const deliveryCharge = Number(order.shippingFee) || 0;
@@ -240,13 +250,19 @@ async function buildBreakdownsForOrders(
       const voSubtotal = Number(vo?.subtotal) || soldTotal;
       const voCouponDiscount = Number(vo?.couponDiscount) || 0;
 
-      // In vendor view, only include coupon discounts that belong to this vendor's own coupon
-      // and exclude platform-funded points discounts.
+      // Admin coupons apply only to platform-owned products (!itemVendorId);
+      // vendor coupons apply only to that vendor's own products (vo.couponDiscount).
       const vendorCouponAllocated =
         voCouponDiscount > 0 && voSubtotal > 0
           ? cleanDecimal(voCouponDiscount * (soldTotal / voSubtotal))
           : 0;
-      const orderCouponAllocated = cleanDecimal(orderCouponDiscount * shareRatio);
+      const adminCouponAllocated =
+        !itemVendorId && adminCouponDiscount > 0 && platformSoldSubtotal > 0
+          ? cleanDecimal(adminCouponDiscount * (soldTotal / platformSoldSubtotal))
+          : platformSoldSubtotal === 0 && adminCouponDiscount > 0
+            ? cleanDecimal(adminCouponDiscount * shareRatio)
+            : 0;
+      const orderCouponAllocated = cleanDecimal(vendorCouponAllocated + adminCouponAllocated);
       const couponDiscountAllocated = scopeVendorId ? vendorCouponAllocated : orderCouponAllocated;
 
       const pointsValueAllocated = scopeVendorId
