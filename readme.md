@@ -348,6 +348,11 @@ The storefront runs separately on port 3000; see its README.
 
 ### Security Notes
 
+- **Centralized order financial analytics (`order-financials.service.ts`):** Computes proportional order-level and product-level financial breakdowns, Admin/Vendor profit splits, and enforces Premium/Advanced plan gating plus strict vendor isolation on `/api/vendor-analytics/financials`.
+- **Strict coupon ownership:** Admin coupons only target and discount platform-owned products (`!vendorId`); vendor coupons only target that vendor's own products.
+- **Product archive & delete ownership (`archivedBy`):** Admins can archive any product and delete only store-owned products (never vendor-owned); neither admin nor vendor can unarchive a product archived by the other. Vendors can permanently delete their own products via `DELETE /api/vendor-products/:id/permanent`.
+- **Decimal-safe financial calculations:** Uses `cleanDecimal` to strip IEEE-754 floating-point noise without truncating real decimal precision.
+- **Delivery OTP & notification concurrency:** Defers `verifiedAt` commit until order and delivery status updates succeed, and runs post-commit emails/notifications in parallel (`Promise.allSettled`) to prevent verification timeouts.
 - Suspended accounts are refused at the API; a session past its `expiresAt` no longer authenticates.
 - Suspending an account cascades: the seller's shop is set to `suspended` (listings drop off, the product page 404s, checkout refuses its lines), the dashboards are parked, and the rider goes offline. Reactivating releases only what the suspension parked.
 - Scheduled routes require `CRON_SECRET`; the `x-vercel-cron` header is not trusted on its own.
