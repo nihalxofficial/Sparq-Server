@@ -324,6 +324,17 @@ export async function updateMyProduct(
   }
 
   const currentStatus = String(product.vendorProductStatus ?? "published");
+  if (
+    currentStatus === "archived" &&
+    (product as any).archivedBy === "admin" &&
+    input.status
+  ) {
+    throw new ApiError(
+      403,
+      "This product was archived by an administrator and can only be unarchived by an admin."
+    );
+  }
+
   const wasLive = isLiveVendorProductStatus(currentStatus);
   const stock = input.stockQuantity !== undefined ? input.stockQuantity : product.stockQuantity;
   const nextStatus = resolveStatus({
@@ -334,6 +345,13 @@ export async function updateMyProduct(
   const willBeLive = isLiveVendorProductStatus(nextStatus);
 
   const update: Record<string, unknown> = { vendorProductStatus: nextStatus };
+  if (String(nextStatus) === "archived" && currentStatus !== "archived") {
+    update.archivedBy = "vendor";
+    update.archivedAt = new Date();
+  } else if (String(nextStatus) !== "archived" && currentStatus === "archived") {
+    update.archivedBy = null;
+    update.archivedAt = null;
+  }
 
   const fields = [
     "title",
@@ -428,8 +446,20 @@ export async function archiveMyProduct(userId: string, productId: string) {
   const product = await requireOwnedProduct(userId, productId);
   const store = await requireStore(userId);
 
+  if (
+    product.vendorProductStatus === "archived" &&
+    (product as any).archivedBy === "admin"
+  ) {
+    throw new ApiError(
+      403,
+      "This product is already archived by an administrator."
+    );
+  }
+
   product.vendorProductStatus = "archived";
   product.isVisible = false;
+  (product as any).archivedBy = "vendor";
+  (product as any).archivedAt = new Date();
   await product.save();
 
   // The shelf goes with the listing, and the row says why it went quiet.
@@ -447,9 +477,21 @@ export async function unarchiveMyProduct(userId: string, productId: string) {
   const product = await requireOwnedProduct(userId, productId);
   const store = await requireStore(userId);
 
+  if (
+    product.vendorProductStatus === "archived" &&
+    (product as any).archivedBy === "admin"
+  ) {
+    throw new ApiError(
+      403,
+      "This product was archived by an administrator. Only an admin can unarchive it."
+    );
+  }
+
   product.vendorProductStatus = "pending_review";
   product.isVisible = false;
   product.submittedAt = new Date();
+  (product as any).archivedBy = null;
+  (product as any).archivedAt = null;
   await product.save();
 
   await notifyAdminProductReview({
@@ -460,4 +502,15 @@ export async function unarchiveMyProduct(userId: string, productId: string) {
 
   await syncStoreProductCount(String(store._id));
   return formatProduct(product);
+}
+
+/** Permanently deletes a vendor's own product. */
+export async function deleteMyProduct(userId: string, productId: string) {
+  const product = await requireOwnedProduct(userId, productId);
+  const store = await requireStore(userId);
+
+  await Product.findByIdAndDelete(product._id);
+  await endPlacementForProduct(String(product._id), "The product was removed");
+  await syncStoreProductCount(String(store._id));
+  return { deleted: true, id: String(product._id) };
 }

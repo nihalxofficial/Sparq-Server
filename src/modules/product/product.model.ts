@@ -60,6 +60,8 @@ const productSchema = new Schema(
     vendorRejectionReason: { type: String, default: "" },
     submittedAt: { type: Date, default: null },
     publishedAt: { type: Date, default: null },
+    archivedBy: { type: String, enum: ["admin", "vendor"], default: null },
+    archivedAt: { type: Date, default: null },
 
     /** A vendor can hide a published product without archiving it. */
     isVisible: { type: Boolean, default: true, index: true },

@@ -18,6 +18,7 @@ router.post("/", validate(createVendorProductSchema), controller.createMyProduct
 router.get("/:id", controller.getMyProduct);
 router.patch("/:id", validate(updateVendorProductSchema), controller.updateMyProduct);
 router.patch("/:id/unarchive", controller.unarchiveMyProduct);
+router.delete("/:id/permanent", controller.deleteMyProduct);
 router.delete("/:id", controller.archiveMyProduct);
 
 export default router;

@@ -47,3 +47,8 @@ export const unarchiveMyProduct = catchAsync(async (req, res) => {
   const product = await productService.unarchiveMyProduct(req.user!.id, req.params.id as string);
   apiResponse(res, 200, product, "Product filed for review");
 });
+
+export const deleteMyProduct = catchAsync(async (req, res) => {
+  const result = await productService.deleteMyProduct(req.user!.id, req.params.id as string);
+  apiResponse(res, 200, result, "Product deleted");
+});

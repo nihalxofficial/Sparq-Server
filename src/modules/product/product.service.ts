@@ -752,25 +752,33 @@ export async function updateProduct(id: string, data: UpdateProductInput) {
  * keeps what the store itself sells, and a vendor's row leaves the shop only
  * through the review decision it belongs to.
  */
-function assertStoreOwned(product: { vendorId?: unknown; ownerId?: unknown }) {
-  if (product.vendorId) {
-    throw new ApiError(403, "A seller's listing is managed from the review desk, not archived here");
-  }
-  if (!product.ownerId) throw new ApiError(404, "Product not found");
-}
-
 export async function archiveProductByAdmin(id: string) {
   const product = await Product.findById(id);
   if (!product) throw new ApiError(404, "Product not found");
-  assertStoreOwned(product);
 
-  product.vendorProductStatus = "archived";
-  product.isVisible = false;
-  await product.save();
+  if (product.vendorProductStatus !== "archived") {
+    product.vendorProductStatus = "archived";
+    product.isVisible = false;
+    (product as any).archivedBy = "admin";
+    (product as any).archivedAt = new Date();
+    await product.save();
+  }
 
-  // The shelf goes with the listing; the store's own desk needs no bell for a
-  // move it just made.
+  // The shelf goes with the listing.
   await endPlacementForProduct(id, "The listing was archived by admin");
+
+  if (product.storeId) {
+    await syncStoreProductCount(String(product.storeId));
+  }
+
+  if (product.vendorId) {
+    await notifyVendorProductStatus({
+      userId: String(product.vendorId),
+      title: "Product Archived",
+      detail: `Your product "${product.title}" was archived by an administrator.`,
+      productId: String(product._id),
+    });
+  }
 
   return formatProduct(product, { view: "admin" });
 }
@@ -778,11 +786,40 @@ export async function archiveProductByAdmin(id: string) {
 export async function unarchiveProductByAdmin(id: string) {
   const product = await Product.findById(id);
   if (!product) throw new ApiError(404, "Product not found");
-  assertStoreOwned(product);
 
-  product.vendorProductStatus = "published";
+  if (
+    product.vendorProductStatus === "archived" &&
+    (product as any).archivedBy === "vendor"
+  ) {
+    throw new ApiError(
+      403,
+      "This product was archived by its vendor. Only the vendor can unarchive it."
+    );
+  }
+
+  const nextStatus: VendorProductStatus =
+    typeof product.stockQuantity === "number" && product.stockQuantity <= 0
+      ? "out_of_stock"
+      : "published";
+
+  product.vendorProductStatus = nextStatus;
   product.isVisible = true;
+  (product as any).archivedBy = null;
+  (product as any).archivedAt = null;
   await product.save();
+
+  if (product.storeId) {
+    await syncStoreProductCount(String(product.storeId));
+  }
+
+  if (product.vendorId) {
+    await notifyVendorProductStatus({
+      userId: String(product.vendorId),
+      title: "Product Unarchived",
+      detail: `Your product "${product.title}" was unarchived by an administrator and is now active.`,
+      productId: String(product._id),
+    });
+  }
 
   return formatProduct(product, { view: "admin" });
 }
@@ -871,6 +908,16 @@ export async function reviewVendorProduct(
 }
 
 export async function deleteProduct(id: string) {
+  const existing = await Product.findById(id);
+  if (!existing) throw new ApiError(404, "Product not found");
+
+  if (existing.vendorId) {
+    throw new ApiError(
+      403,
+      "Admins cannot delete vendor-owned products. You may archive the product instead."
+    );
+  }
+
   const product = await Product.findByIdAndDelete(id);
   if (!product) throw new ApiError(404, "Product not found");
 
@@ -878,16 +925,6 @@ export async function deleteProduct(id: string) {
   // the promotions board from showing a shelf that points at a row nobody can
   // open, and frees the shelf for the next listing.
   await endPlacementForProduct(id, "The product was removed");
-
-  const targetUserId = product.vendorId ? String(product.vendorId) : product.ownerId ? String(product.ownerId) : null;
-  if (targetUserId) {
-    await notifyVendorProductStatus({
-      userId: targetUserId,
-      title: "Product Deleted",
-      detail: `Your product "${product.title}" was deleted by an administrator.`,
-      productId: String(product._id),
-    });
-  }
 }
 
 export async function getProductBySlug(slug: string, view: ProductView = "public") {
