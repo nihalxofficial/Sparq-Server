@@ -31,6 +31,8 @@ const vendorOrderItemSchema = new Schema(
     price: { type: Number, required: true },
     quantity: { type: Number, required: true },
     image: { type: String, default: "" },
+    /** What one unit cost the seller at checkout — frozen, never re-read. */
+    unitCost: { type: Number, default: null },
   },
   { _id: false }
 );
@@ -63,6 +65,17 @@ const vendorOrderSchema = new Schema(
     subtotal: { type: Number, default: 0 },
     /** The part of a seller's own coupon that came off this group's total. */
     couponDiscount: { type: Number, default: 0 },
+
+    /**
+     * The plan this group was sold under, frozen at checkout.
+     *
+     * A later plan change must not re-price an order that already shipped, so
+     * the commission and the delivery cover are written down here and read
+     * back as-is. The live plan is only consulted for rows that predate this.
+     */
+    commissionPercent: { type: Number, default: 0 },
+    /** True when the seller's plan at checkout carried the delivery fee. */
+    deliveryCovered: { type: Boolean, default: false },
 
     status: {
       type: String,

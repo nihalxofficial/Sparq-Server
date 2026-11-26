@@ -965,8 +965,10 @@ export async function getProductBySlug(slug: string, view: ProductView = "public
  *
  * Every order line stores the price it was charged at, so revenue is summed
  * from the orders themselves: a unit sold during a sale keeps that sale's
- * price, and an order cancelled after delivery stops counting. Cost is the
- * product's current cost per unit, the same number the desk shows elsewhere.
+ * price, and an order cancelled after delivery stops counting. Cost is the cost
+ * frozen on each line at checkout, so editing the product's cost price today
+ * cannot re-price a sale that already happened. Only lines that predate the
+ * frozen cost fall back to the current cost per unit.
  */
 export async function realizedSalesFor(product: any) {
   const productId = String(product._id ?? product.id ?? "");
@@ -985,6 +987,21 @@ export async function realizedSalesFor(product: any) {
             _id: null,
             units: { $sum: "$items.quantity" },
             revenue: { $sum: { $multiply: ["$items.price", "$items.quantity"] } },
+            // The cost frozen on each line at checkout, and how many units have one.
+            frozenCost: {
+              $sum: {
+                $cond: [
+                  { $ne: [{ $ifNull: ["$items.unitCost", null] }, null] },
+                  { $multiply: [{ $ifNull: ["$items.unitCost", 0] }, "$items.quantity"] },
+                  0,
+                ],
+              },
+            },
+            frozenUnits: {
+              $sum: {
+                $cond: [{ $ne: [{ $ifNull: ["$items.unitCost", null] }, null] }, "$items.quantity", 0],
+              },
+            },
           },
         },
       ])
@@ -992,7 +1009,18 @@ export async function realizedSalesFor(product: any) {
 
   const units = Number(row?.units) || 0;
   const revenue = round2(Number(row?.revenue) || 0);
-  const cost = costPrice != null ? round2(costPrice * units) : null;
+  const frozenUnits = Number(row?.frozenUnits) || 0;
+  const frozenCost = Number(row?.frozenCost) || 0;
+  const legacyUnits = Math.max(0, units - frozenUnits);
+
+  // A sold-out product with every unit priced can report its cost exactly; any
+  // legacy unit with no cost price on file leaves the whole figure unknown.
+  let cost: number | null = null;
+  if (legacyUnits === 0) {
+    cost = units > 0 ? round2(frozenCost) : null;
+  } else if (costPrice != null) {
+    cost = round2(frozenCost + costPrice * legacyUnits);
+  }
 
   return { units, revenue, cost, profit: cost != null ? round2(revenue - cost) : null };
 }

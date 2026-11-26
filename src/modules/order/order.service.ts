@@ -210,6 +210,9 @@ async function buildOrderItems(items: CreateOrderInput["items"]) {
       price:     unitPrice,
       quantity:  item.quantity,
       image:     product.image || item.image || "",
+      // What the unit cost the seller right now. Frozen at checkout so editing
+      // the product's cost price later cannot re-price an order already placed.
+      unitCost:  product.investPrice == null ? null : Number(product.investPrice),
     });
   }
 

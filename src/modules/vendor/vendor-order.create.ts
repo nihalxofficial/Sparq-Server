@@ -1,6 +1,8 @@
 import { Types, type ClientSession } from "mongoose";
 import { VendorOrder, type VendorOrderStatus } from "./vendor-order.model";
 import { roundMoney } from "../../utils/money";
+import { getVendorPlanState } from "./vendor-subscription.service";
+import { planCoversDelivery } from "./vendor.types";
 
 /**
  * Splits a freshly placed checkout into one row per seller.
@@ -10,9 +12,12 @@ import { roundMoney } from "../../utils/money";
  * platform's own stock: they stay on the parent order only, which is why an
  * order paid entirely for platform products creates nothing here.
  *
- * The file imports the model and nothing else on purpose: `order.service`
- * imports it, and the listing service imports the order, so this is the one
- * direction that keeps the two modules acyclic.
+ * The file imports the model, the money helper and the plan reader, and nothing
+ * that imports the order service: `order.service` imports this file, so the
+ * direction stays acyclic.
+ *
+ * The seller's plan is read once, here, and frozen onto the group. A later plan
+ * change must never re-price an order that already shipped.
  */
 
 function shortOrderNumber(id: unknown): string {
@@ -46,6 +51,10 @@ export async function createVendorOrdersForOrder(
       price: Number(item.price) || 0,
       quantity: Number(item.quantity) || 0,
       image: item.image || "",
+      unitCost:
+        item.unitCost == null || !Number.isFinite(Number(item.unitCost))
+          ? null
+          : Number(item.unitCost),
     });
     group.subtotal += (Number(item.price) || 0) * (Number(item.quantity) || 0);
 
@@ -53,6 +62,26 @@ export async function createVendorOrdersForOrder(
   }
 
   if (groups.size === 0) return [];
+
+  // The plan each shop was on at checkout. Read once and frozen onto the group,
+  // so a later upgrade or downgrade cannot re-price an order already placed.
+  const planByVendor = new Map<
+    string,
+    { commissionPercent: number; deliveryCovered: boolean }
+  >();
+  for (const vendorId of groups.keys()) {
+    try {
+      const state = await getVendorPlanState(vendorId);
+      planByVendor.set(vendorId, {
+        commissionPercent: Number(state.plan.commissionPercent) || 0,
+        deliveryCovered: Boolean(state.isLive && planCoversDelivery(state.plan)),
+      });
+    } catch {
+      // A plan read that fails must not block the checkout; the group simply
+      // carries no cover, which is the safe default.
+      planByVendor.set(vendorId, { commissionPercent: 0, deliveryCovered: false });
+    }
+  }
 
   const rows = [...groups.entries()].map(([vendorId, group]) => {
     // A seller's own code is paid for by that seller: its discount comes off
@@ -75,6 +104,8 @@ export async function createVendorOrdersForOrder(
       items: group.items,
       subtotal: roundMoney(group.subtotal - vendorDiscount),
       couponDiscount: vendorDiscount,
+      commissionPercent: planByVendor.get(vendorId)?.commissionPercent ?? 0,
+      deliveryCovered: planByVendor.get(vendorId)?.deliveryCovered ?? false,
       status: "pending" as const,
       history: [{ status: "pending" as const, at: new Date(), note: "Order placed" }],
     };

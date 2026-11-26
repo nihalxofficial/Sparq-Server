@@ -161,8 +161,14 @@ async function deliveryFeeSplit(
     const subtotal = Number(row.subtotal) || 0;
     if (fee <= 0 || worth <= 0) continue;
 
+    // The cover is the one frozen on the group at checkout, so a later plan
+    // change cannot move who paid for a parcel already delivered. A group that
+    // predates the snapshot falls back to the window's live reading.
+    const groupCovered =
+      row.deliveryCovered === undefined ? covered : Boolean(row.deliveryCovered);
+
     const share = round2((fee * subtotal) / worth);
-    const paid = covered ? 0 : Math.min(share, subtotal);
+    const paid = groupCovered ? 0 : Math.min(share, subtotal);
 
     billed = round2(billed + share);
     deducted = round2(deducted + paid);
@@ -173,25 +179,55 @@ async function deliveryFeeSplit(
 }
 
 /**
- * The units a window earned, keyed by product, so one cost table prices them.
+ * The units a window earned, keyed by product, and what those units cost.
  *
  * Only delivered groups count, exactly like the revenue figure: the cost of a
- * parcel still on the road is not a loss yet.
+ * parcel still on the road is not a loss yet. The cost comes from the unit cost
+ * frozen on the line at checkout, so editing a product's cost price today can
+ * never re-price a sale that already happened. A line with no frozen cost (an
+ * order placed before this was recorded) is counted as missing and priced from
+ * the fallback table, which is the old behaviour for old rows only.
  */
-function unitsByProduct(rows: any[], from: number, to: number) {
+function unitsAndCostByProduct(
+  rows: any[],
+  from: number,
+  to: number,
+  fallbackCosts: Map<string, number | null>
+) {
   const units = new Map<string, number>();
+  const cost = new Map<string, number>();
+  let missingUnits = 0;
+
   for (const row of rows) {
     const at = earnedAt(row);
     if (!at) continue;
     const time = at.getTime();
     if (time < from || time > to) continue;
+
     for (const item of row.items || []) {
       const id = String(item.productId?._id ?? item.productId ?? "");
       if (!id) continue;
-      units.set(id, (units.get(id) || 0) + (Number(item.quantity) || 0));
+      const qty = Number(item.quantity) || 0;
+      units.set(id, (units.get(id) || 0) + qty);
+
+      let unitCost =
+        item.unitCost == null || !Number.isFinite(Number(item.unitCost))
+          ? null
+          : Number(item.unitCost);
+      if (unitCost == null) {
+        const fallback = fallbackCosts.get(id);
+        unitCost = fallback == null ? null : Number(fallback);
+      }
+
+      if (unitCost == null || !Number.isFinite(unitCost)) {
+        missingUnits += qty;
+        continue;
+      }
+      cost.set(id, (cost.get(id) || 0) + unitCost * qty);
     }
   }
-  return units;
+
+  return { units, cost, missingUnits };
 }
 
 /**
@@ -315,7 +351,7 @@ export async function getVendorAnalytics(vendorId: string, query: VendorAnalytic
       { status: { $in: IN_FLIGHT_STATUSES } },
     ],
   })
-    .select("status subtotal items createdAt updatedAt history orderNumber city orderId")
+    .select("status subtotal items createdAt updatedAt history orderNumber city orderId commissionPercent deliveryCovered")
     .lean();
 
   const current = summarise(rows, from, now);
@@ -326,13 +362,42 @@ export async function getVendorAnalytics(vendorId: string, query: VendorAnalytic
   // all — not even in the series — so the teaser on its page promises something
   // the payload does not quietly carry.
   const paid = level !== "basic";
-  const currentUnits = paid ? unitsByProduct(rows, from, now) : new Map<string, number>();
-  const previousUnits = paid
-    ? unitsByProduct(rows, previousFrom, from)
-    : new Map<string, number>();
-  const unitCosts = paid
-    ? await unitCostsOf([...currentUnits.keys(), ...previousUnits.keys()])
+
+  // The live cost table is now only a fallback for lines that predate the
+  // frozen unit cost. New orders carry their own, so a later cost edit cannot
+  // reach them.
+  const fallbackCosts = paid
+    ? await unitCostsOf([
+        ...rows.flatMap((row: any) =>
+          (row.items || [])
+            .filter((item: any) => item.unitCost == null)
+            .map((item: any) => String(item.productId?._id ?? item.productId ?? ""))
+        ),
+      ])
     : new Map<string, number | null>();
+
+  const emptyBook = {
+    units: new Map<string, number>(),
+    cost: new Map<string, number>(),
+    missingUnits: 0,
+  };
+  const currentBook = paid
+    ? unitsAndCostByProduct(rows, from, now, fallbackCosts)
+    : emptyBook;
+  const previousBook = paid
+    ? unitsAndCostByProduct(rows, previousFrom, from, fallbackCosts)
+    : emptyBook;
+  const currentUnits = currentBook.units;
+  const previousUnits = previousBook.units;
+
+  // What one unit cost on a line: the frozen figure, or the fallback for old rows.
+  const unitCostOf = (item: any): number | null => {
+    const raw = item?.unitCost;
+    if (raw != null && Number.isFinite(Number(raw))) return Number(raw);
+    const id = String(item?.productId?._id ?? item?.productId ?? "");
+    const fallback = fallbackCosts.get(id);
+    return fallback == null ? null : Number(fallback);
+  };
 
   // The chart keeps a point for every day (or month) in the window, so a quiet
   // week reads as flat instead of as missing data.
@@ -362,9 +427,7 @@ export async function getVendorAnalytics(vendorId: string, query: VendorAnalytic
         // The same units at the seller's own cost, so the profit line under
         // the revenue chart is drawn from the same rows as the revenue.
         for (const item of row.items || []) {
-          const unitCost = unitCosts.get(
-            String(item.productId?._id ?? item.productId ?? "")
-          );
+          const unitCost = unitCostOf(item);
           if (unitCost) bucket.cost += unitCost * (Number(item.quantity) || 0);
         }
       }
@@ -406,11 +469,25 @@ export async function getVendorAnalytics(vendorId: string, query: VendorAnalytic
       revenue: Math.round(product.revenue * 100) / 100,
     }));
 
-  const commissionTaken = Math.round(current.revenue * (commission / 100) * 100) / 100;
+  // Commission is taken at the rate frozen on each group at checkout, so a
+  // later plan change cannot re-price an order already delivered. A group that
+  // predates the snapshot falls back to the window's live rate.
+  const commissionTaken = round2(
+    rows.reduce((sum, row) => {
+      const at = earnedAt(row);
+      if (!at) return sum;
+      const time = at.getTime();
+      if (time < from || time > now) return sum;
+      const rate =
+        row.commissionPercent === undefined ? commission : Number(row.commissionPercent) || 0;
+      return sum + (Number(row.subtotal) || 0) * (rate / 100);
+    }, 0)
+  );
 
   // The courier is paid before anybody is: on the free plan it comes off this
   // window's income, capped at what the window earned, and a paid plan leaves
-  // the whole fee with us.
+  // the whole fee with us. `planCoversDelivery(plan)` is only the fallback for
+  // groups that predate the frozen cover.
   const delivery = await deliveryFeeSplit(
     rows,
     from,
@@ -420,25 +497,17 @@ export async function getVendorAnalytics(vendorId: string, query: VendorAnalytic
   const netPayout = cleanDecimal(current.revenue - commissionTaken - delivery.deducted);
 
   // P&L: the paid plans see what the delivered money cost to make. The cost is
-  // read from each product's current invest price, so editing a cost re-prices
-  // this report — it is the seller's own book, not a frozen invoice.
+  // the one frozen on each line at checkout, so editing a cost price today
+  // cannot re-price a sale that already happened. Only lines that predate the
+  // frozen figure fall back to the live cost, and those are counted as missing.
   let profit: ProfitReport | null = null;
   if (paid) {
     let costTotal = 0;
-    let missingCostUnits = 0;
-    for (const [id, units] of currentUnits) {
-      const unitCost = unitCosts.get(id);
-      if (unitCost == null) {
-        missingCostUnits += units;
-        continue;
-      }
-      costTotal += unitCost * units;
-    }
+    currentBook.cost.forEach((value) => { costTotal += value; });
+    const missingCostUnits = currentBook.missingUnits;
 
     let previousCost = 0;
-    for (const [id, units] of previousUnits) {
-      previousCost += (unitCosts.get(id) ?? 0) * units;
-    }
+    previousBook.cost.forEach((value) => { previousCost += value; });
 
     const cost = round2(costTotal);
     const gross = round2(current.revenue - cost);
@@ -446,16 +515,15 @@ export async function getVendorAnalytics(vendorId: string, query: VendorAnalytic
     const losses = [...currentUnits.entries()]
       .map(([id, units]) => {
         const product = products.get(id);
-        const unitCost = unitCosts.get(id);
-        if (!product || unitCost == null || unitCost <= 0) return null;
-        const lineCost = round2(unitCost * units);
+        const lineCost = currentBook.cost.get(id);
+        if (!product || lineCost == null) return null;
         const loss = round2(lineCost - product.revenue);
         if (loss <= 0) return null;
         return {
           title: product.title,
           units,
           revenue: round2(product.revenue),
-          cost: lineCost,
+          cost: round2(lineCost),
           loss,
         };
       })

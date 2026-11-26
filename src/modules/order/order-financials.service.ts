@@ -117,6 +117,22 @@ function shortOrderNumber(id: unknown): string {
 }
 
 /**
+ * Who paid the delivery fee on a seller's group, read from the plan frozen on
+ * the group at checkout. The live plan is only consulted for rows that predate
+ * the snapshot, so a plan change never re-prices an order already shipped.
+ */
+function groupDeliveryCovered(vo: any, planState: any): boolean {
+  if (vo && vo.deliveryCovered !== undefined) return Boolean(vo.deliveryCovered);
+  return Boolean(planState?.isLive && planCoversDelivery(planState.plan));
+}
+
+/** The commission a group carries, frozen at checkout, with a live fallback. */
+function groupCommissionPercent(vo: any, planState: any): number {
+  if (vo && vo.commissionPercent !== undefined) return Number(vo.commissionPercent) || 0;
+  return Number(planState?.plan?.commissionPercent ?? 10);
+}
+
+/**
  * Computes exact proportional allocations without losing precision or
  * double-counting order-level discounts, points, or rider payouts.
  */
@@ -243,8 +259,8 @@ async function buildBreakdownsForOrders(
       ),
     ];
     const hasFreePlanVendor = orderVendorIds.some((vid) => {
-      const st = planMap.get(vid);
-      return !(st?.isLive && planCoversDelivery(st.plan));
+      const vo = voMap.get(`${orderId}:${vid}`);
+      return !groupDeliveryCovered(vo, planMap.get(vid));
     });
     const hasAnyVendor = orderVendorIds.length > 0;
 
@@ -331,14 +347,16 @@ async function buildBreakdownsForOrders(
       );
 
       const unitCost =
-        prodDoc?.investPrice != null && Number.isFinite(Number(prodDoc.investPrice))
-          ? Number(prodDoc.investPrice)
-          : null;
+        item.unitCost != null && Number.isFinite(Number(item.unitCost))
+          ? Number(item.unitCost)
+          : prodDoc?.investPrice != null && Number.isFinite(Number(prodDoc.investPrice))
+            ? Number(prodDoc.investPrice)
+            : null;
       const totalCost = unitCost != null ? cleanDecimal(unitCost * qty) : null;
 
-      const vendorPlanState = itemVendorId ? planMap.get(itemVendorId) : undefined;
+      const itemVo = itemVendorId ? voMap.get(`${orderId}:${itemVendorId}`) : null;
       const commissionPercent = itemVendorId
-        ? Number(vendorPlanState?.plan?.commissionPercent ?? 10)
+        ? groupCommissionPercent(itemVo, itemVendorId ? planMap.get(itemVendorId) : undefined)
         : 0;
       const platformCommission = itemVendorId
         ? cleanDecimal(soldTotal * (commissionPercent / 100))
@@ -431,8 +449,8 @@ async function buildBreakdownsForOrders(
     const adminRiderPayout = scopeVendorId ? 0 : orderAdminRiderPayout;
     const vendorRiderPayout = scopeVendorId
       ? (() => {
-          const st = planMap.get(scopeVendorId);
-          const covered = Boolean(st?.isLive && planCoversDelivery(st.plan));
+          const vo = voMap.get(`${orderId}:${scopeVendorId}`);
+          const covered = groupDeliveryCovered(vo, planMap.get(scopeVendorId));
           return covered ? 0 : cleanDecimal(totalOrderRiderPayout);
         })()
       : orderVendorRiderPayout;
@@ -508,8 +526,8 @@ async function buildBreakdownsForOrders(
           : !scopeVendorId && orderRiderPayer === "Vendor"
             ? (() => {
                 const vid = ownerKey.replace("vendor:", "");
-                const st = planMap.get(vid);
-                const covered = Boolean(st?.isLive && planCoversDelivery(st.plan));
+                const vo = voMap.get(`${orderId}:${vid}`);
+                const covered = groupDeliveryCovered(vo, planMap.get(vid));
                 return covered ? 0 : vendorRiderPayout;
               })()
             : scopeVendorId

@@ -14,6 +14,15 @@ const orderItemSchema = new Schema(
     price: { type: Number, required: true },
     quantity: { type: Number, required: true },
     image: { type: String },
+    /**
+     * What one unit cost the seller when the order was placed.
+     *
+     * Frozen here so a later edit to the product's cost price can never
+     * re-price an order that already shipped. `null` means the cost was not
+     * known at checkout (or the line is old), and the report says so rather
+     * than guessing.
+     */
+    unitCost: { type: Number, default: null },
   },
   { _id: false }
 );
