@@ -1067,46 +1067,52 @@ export async function updateOrderStatus(
     return updated;
   });
 
-  // Cash on delivery settles at the door. applyDelivery just flipped its
-  // payment row to "success", so this is the moment a payment really was
-  // recorded — the checkout only promised one.
+  // Cash on delivery settles at the door, and post-commit notifications run
+  // in parallel so slow SMTP connections never block the response.
   const wasDelivered = previousStatus === "delivered";
+  const postCommitTasks: Promise<unknown>[] = [];
+
   if (data.orderStatus === "delivered" && !wasDelivered && updated.paymentMethod === "cod") {
-    await recordActivity({
-      type: "transaction",
-      title: `Payment collected for ${shortOrderNumber(updated._id)}`,
-      detail: `Cash on delivery · ${money(updated.totalAmount)}`,
-      ref: updated._id.toString(),
-    });
+    postCommitTasks.push(
+      recordActivity({
+        type: "transaction",
+        title: `Payment collected for ${shortOrderNumber(updated._id)}`,
+        detail: `Cash on delivery · ${money(updated.totalAmount)}`,
+        ref: updated._id.toString(),
+      })
+    );
   }
 
-  // The customer is told about every stage they can see, after the commit.
   if (statusChanged) {
-    await notifyOrderStatusChanged(updated, data.orderStatus);
-  }
+    postCommitTasks.push(notifyOrderStatusChanged(updated, data.orderStatus));
 
-  // The sellers are told the same, so their board and inbox agree with the
-  // customer's.
-  if (statusChanged) {
     const vendorIds = await VendorOrder.find({ orderId: updated._id }).distinct("vendorId");
     for (const vendorId of vendorIds) {
-      await notifyVendor({
-        userId: String(vendorId),
-        type: "vendor_order",
-        title: `Order ${shortOrderNumber(updated._id)} ${data.orderStatus}`,
-        detail: `The order is now ${data.orderStatus}.`,
-        ref: updated._id.toString(),
-        emailSubject: `Order ${shortOrderNumber(updated._id)} ${data.orderStatus}`,
-      });
+      postCommitTasks.push(
+        notifyVendor({
+          userId: String(vendorId),
+          type: "vendor_order",
+          title: `Order ${shortOrderNumber(updated._id)} ${data.orderStatus}`,
+          detail: `The order is now ${data.orderStatus}.`,
+          ref: updated._id.toString(),
+          emailSubject: `Order ${shortOrderNumber(updated._id)} ${data.orderStatus}`,
+        })
+      );
     }
 
-    await notifyAdminEmail({
-      heading: `Order ${shortOrderNumber(updated._id)} ${data.orderStatus}`,
-      intro: `The order is now ${data.orderStatus}.`,
-      orderNumber: shortOrderNumber(updated._id),
-      actionLabel: "Open orders",
-      actionPath: "/dashboard/admin/orders",
-    });
+    postCommitTasks.push(
+      notifyAdminEmail({
+        heading: `Order ${shortOrderNumber(updated._id)} ${data.orderStatus}`,
+        intro: `The order is now ${data.orderStatus}.`,
+        orderNumber: shortOrderNumber(updated._id),
+        actionLabel: "Open orders",
+        actionPath: "/dashboard/admin/orders",
+      })
+    );
+  }
+
+  if (postCommitTasks.length > 0) {
+    await Promise.allSettled(postCommitTasks);
   }
 
   return updated;

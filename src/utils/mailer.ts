@@ -31,7 +31,7 @@ export interface MailResult {
 
 // A serverless host cuts off promises left running after the response, so every
 // connection step gets a short budget instead of hanging.
-const TIMEOUT_MS = 8000;
+const TIMEOUT_MS = 4000;
 
 /** True when a mailbox login is available. */
 function isSmtpConfigured(): boolean {

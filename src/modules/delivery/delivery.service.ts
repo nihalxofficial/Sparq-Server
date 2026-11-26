@@ -1316,7 +1316,7 @@ export async function completeDelivery(riderId: string, id: string, code: string
     );
   }
 
-  await verifyOtpCode(String(delivery._id), code);
+  await verifyOtpCode(String(delivery._id), code, { commit: false });
 
   const orderNumber = shortOrderNumber(delivery.orderId);
 
@@ -1346,31 +1346,34 @@ export async function completeDelivery(riderId: string, id: string, code: string
     { new: true }
   ).populate("riderId", "name phone image vehicleType vehicleNumber");
 
-  await markOtpUsed(String(delivery._id));
+  const [, order] = await Promise.all([
+    markOtpUsed(String(delivery._id)),
+    Order.findById(delivery.orderId).select("userId").lean(),
+  ]);
 
-  const order = await Order.findById(delivery.orderId).select("userId");
-  if (updated && order) {
-    await notifyCustomerDelivery({
-      userId: String(order.userId),
-      deliveryId: String(updated._id),
-      orderId: String(updated.orderId),
-      orderNumber,
-      title: "Delivered",
-      detail: "Your delivery code was confirmed. Thanks for shopping with us.",
-      emailHeading: "Your order has been delivered",
-      emailRows: [
-        { label: "Order", value: orderNumber },
-        { label: "Rider", value: (updated.riderId as any)?.name },
-      ],
-    });
-  }
-
-  await recordActivity({
-    type: "delivery",
-    title: `Delivery ${orderNumber} completed`,
-    detail: `${(updated?.riderId as any)?.name || "Rider"} · ${money(updated?.fee)}`,
-    ref: String(delivery.orderId),
-  });
+  await Promise.allSettled([
+    updated && order
+      ? notifyCustomerDelivery({
+          userId: String(order.userId),
+          deliveryId: String(updated._id),
+          orderId: String(updated.orderId),
+          orderNumber,
+          title: "Delivered",
+          detail: "Your delivery code was confirmed. Thanks for shopping with us.",
+          emailHeading: "Your order has been delivered",
+          emailRows: [
+            { label: "Order", value: orderNumber },
+            { label: "Rider", value: (updated.riderId as any)?.name },
+          ],
+        })
+      : Promise.resolve(),
+    recordActivity({
+      type: "delivery",
+      title: `Delivery ${orderNumber} completed`,
+      detail: `${(updated?.riderId as any)?.name || "Rider"} · ${money(updated?.fee)}`,
+      ref: String(delivery.orderId),
+    }),
+  ]);
 
   return toDto(updated ?? delivery);
 }

@@ -93,7 +93,11 @@ export async function getCustomerOtp(deliveryId: string) {
  * Every failure path increments the counter, including an expired code, so a
  * stale code cannot be brute-forced by waiting.
  */
-export async function verifyOtpCode(deliveryId: string, code: string): Promise<void> {
+export async function verifyOtpCode(
+  deliveryId: string,
+  code: string,
+  options: { commit?: boolean } = {}
+): Promise<void> {
   const id = new Types.ObjectId(deliveryId);
   const otp = await DeliveryOTP.findOne({ deliveryId: id });
 
@@ -127,8 +131,10 @@ export async function verifyOtpCode(deliveryId: string, code: string): Promise<v
     );
   }
 
-  otp.verifiedAt = new Date();
-  await otp.save();
+  if (options.commit !== false) {
+    otp.verifiedAt = new Date();
+    await otp.save();
+  }
 }
 
 /** Marks the code as used once the order has been closed as delivered. */
