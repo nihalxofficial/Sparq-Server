@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import { VendorOrder, type VendorOrderStatus } from "./vendor-order.model";
+import { cleanDecimal } from "../../utils/money";
 import { Order } from "../order/order.model";
 import { getVendorPlanState, vendorCommission } from "./vendor-subscription.service";
 import { planCoversDelivery } from "./vendor.types";
@@ -86,7 +87,7 @@ function unitsOf(row: any): number {
 }
 
 function round2(value: number): number {
-  return Math.round(value * 100) / 100;
+  return cleanDecimal(value);
 }
 
 /** What the courier was paid on this window's parcels, and who paid it. */
@@ -271,10 +272,10 @@ function summarise(rows: any[], from: number, to: number) {
   }
 
   return {
-    revenue: Math.round(revenue * 100) / 100,
+    revenue: cleanDecimal(revenue),
     orders,
     units,
-    avgOrderValue: orders > 0 ? Math.round((revenue / orders) * 100) / 100 : 0,
+    avgOrderValue: orders > 0 ? cleanDecimal(revenue / orders) : 0,
   };
 }
 
@@ -416,7 +417,7 @@ export async function getVendorAnalytics(vendorId: string, query: VendorAnalytic
     now,
     planCoversDelivery(plan)
   );
-  const netPayout = Math.round((current.revenue - commissionTaken - delivery.deducted) * 100) / 100;
+  const netPayout = cleanDecimal(current.revenue - commissionTaken - delivery.deducted);
 
   // P&L: the paid plans see what the delivered money cost to make. The cost is
   // read from each product's current invest price, so editing a cost re-prices
@@ -494,8 +495,8 @@ export async function getVendorAnalytics(vendorId: string, query: VendorAnalytic
       orders: current.orders,
       units: current.units,
       avgOrderValue: current.avgOrderValue,
-      inFlight: Math.round(inFlight * 100) / 100,
-      commission: Math.round(commission * 10) / 10,
+      inFlight: cleanDecimal(inFlight),
+      commission: cleanDecimal(commission),
       commissionTaken,
       netPayout,
       /** The delivery fee this window's parcels carried, split by who paid it. */
@@ -511,14 +512,14 @@ export async function getVendorAnalytics(vendorId: string, query: VendorAnalytic
       orders: previous.orders,
       revenueChange:
         previous.revenue > 0
-          ? Math.round(((current.revenue - previous.revenue) / previous.revenue) * 1000) / 10
+          ? cleanDecimal(((current.revenue - previous.revenue) / previous.revenue) * 100)
           : null,
     },
     series: keys.map((key) => {
       const bucket = buckets.get(key)!;
       return {
         label: key,
-        revenue: Math.round(bucket.revenue * 100) / 100,
+        revenue: cleanDecimal(bucket.revenue),
         orders: bucket.orders,
         ...(paid
           ? {

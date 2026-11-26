@@ -98,8 +98,10 @@ export function sellingPriceOf(product: {
   return offerHasLapsed(product) && original > 0 ? original : price;
 }
 
+import { cleanDecimal } from "../../utils/money";
+
 function round2(n: number): number {
-  return Math.round(n * 100) / 100;
+  return cleanDecimal(n);
 }
 
 function round1(n: number): number {

@@ -14,6 +14,7 @@ import { VendorOrder } from "../vendor/vendor-order.model";
 import { VendorStore } from "../vendor/vendor-store.model";
 import { hasWarehouse, warehouseLines } from "../../utils/warehouse";
 import { ApiError } from "../../utils/apiError";
+import { cleanDecimal } from "../../utils/money";
 import { paginate, sortBy, searchOr, where } from "../../utils/query";
 import { hasAnyRole, normalizeRole } from "../../utils/roles";
 import { updateOrderStatus, shipOrderForAcceptedDelivery } from "../order/order.service";
@@ -1610,9 +1611,9 @@ async function payoutReport(query: AdminPayoutsQuery) {
       Delivery.countDocuments(matched),
     ]);
 
-  const paid = Math.round((totalRows[0]?.paid ?? 0) * 100) / 100;
+  const paid = cleanDecimal(totalRows[0]?.paid ?? 0);
   const jobs = totalRows[0]?.jobs ?? 0;
-  const sales = Math.round((totalRows[0]?.sales ?? 0) * 100) / 100;
+  const sales = cleanDecimal(totalRows[0]?.sales ?? 0);
   const owed = outstanding[0] ?? { jobs: 0, amount: 0 };
 
   // A rider's name is not copied onto the job, so the board asks for the names
@@ -1635,28 +1636,28 @@ async function payoutReport(query: AdminPayoutsQuery) {
       // money which left as the riders' pay. A fee on its own says little; next
       // to the sale it came from it says what the store kept.
       sales,
-      feeSharePct: sales > 0 ? Math.round((paid / sales) * 1000) / 10 : 0,
-      avgPerJob: jobs > 0 ? Math.round((paid / jobs) * 100) / 100 : 0,
-      paidThisMonth: Math.round((monthRows[0]?.paid ?? 0) * 100) / 100,
+      feeSharePct: sales > 0 ? cleanDecimal((paid / sales) * 100) : 0,
+      avgPerJob: jobs > 0 ? cleanDecimal(paid / jobs) : 0,
+      paidThisMonth: cleanDecimal(monthRows[0]?.paid ?? 0),
       monthJobs: monthRows[0]?.jobs ?? 0,
     },
     // What the store still owes the riders it has sent out. Not a cost yet, so
     // it is never added to `paid`.
     outstanding: {
       jobs: owed.jobs,
-      amount: Math.round(owed.amount * 100) / 100,
+      amount: cleanDecimal(owed.amount),
     },
     series: bucketRows.map((row: any) => ({
       label: String(row._id),
       jobs: row.jobs,
-      paid: Math.round(row.paid * 100) / 100,
-      sales: Math.round(row.sales * 100) / 100,
+      paid: cleanDecimal(row.paid),
+      sales: cleanDecimal(row.sales),
     })),
     byRider: riderRows.map((row: any) => ({
       riderId: String(row._id),
       name: names.get(String(row._id)) || "A rider",
       jobs: row.jobs,
-      paid: Math.round(row.paid * 100) / 100,
+      paid: cleanDecimal(row.paid),
       lastAt: row.lastAt ? new Date(row.lastAt).toISOString() : null,
     })),
     records: records.map((record: any) => ({
