@@ -228,6 +228,42 @@ async function buildBreakdownsForOrders(
     const delivery = deliveryMap.get(orderId);
     const totalOrderRiderPayout = delivery ? Number(delivery.fee) || 0 : 0;
 
+    // Determine single responsible rider-fee payer for this order (no splitting/dividing):
+    // - Admin-only order -> Admin pays full fee
+    // - Vendor on Premium/Advanced (planCoversDelivery) -> Admin pays full fee
+    // - Vendor on Free plan -> Vendor pays full fee
+    const orderVendorIds = [
+      ...new Set(
+        rawItems
+          .map((item: any) => {
+            const pDoc = productMap.get(String(item.productId || ""));
+            return item.vendorId ? String(item.vendorId) : pDoc?.vendorId ? String(pDoc.vendorId) : "";
+          })
+          .filter(Boolean)
+      ),
+    ];
+    const hasFreePlanVendor = orderVendorIds.some((vid) => {
+      const st = planMap.get(vid);
+      return !(st?.isLive && planCoversDelivery(st.plan));
+    });
+    const hasAnyVendor = orderVendorIds.length > 0;
+
+    let orderRiderPayer: OrderFinancialBreakdown["riderPayoutPayer"] = "None";
+    let orderAdminRiderPayout = 0;
+    let orderVendorRiderPayout = 0;
+    if (totalOrderRiderPayout > 0) {
+      if (!hasAnyVendor) {
+        orderRiderPayer = "Admin";
+        orderAdminRiderPayout = cleanDecimal(totalOrderRiderPayout);
+      } else if (!hasFreePlanVendor) {
+        orderRiderPayer = "Admin (Plan Covered)";
+        orderAdminRiderPayout = cleanDecimal(totalOrderRiderPayout);
+      } else {
+        orderRiderPayer = "Vendor";
+        orderVendorRiderPayout = cleanDecimal(totalOrderRiderPayout);
+      }
+    }
+
     const tx = txMap.get(orderId);
     const paymentStatus = tx?.status
       ? String(tx.status)
@@ -308,31 +344,8 @@ async function buildBreakdownsForOrders(
         ? cleanDecimal(soldTotal * (commissionPercent / 100))
         : 0;
 
-      const rawRiderShare = cleanDecimal(totalOrderRiderPayout * shareRatio);
-      const freeDeliveryCovered = Boolean(
-        itemVendorId &&
-          vendorPlanState?.isLive &&
-          planCoversDelivery(vendorPlanState.plan)
-      );
-
-      let riderPayer: ProductFinancialRow["riderPayoutPayer"] = "None";
-      let vendorRiderShare = 0;
-      let adminRiderShare = 0;
-      if (rawRiderShare > 0) {
-        if (!itemVendorId) {
-          riderPayer = "Admin";
-          adminRiderShare = rawRiderShare;
-        } else if (freeDeliveryCovered) {
-          riderPayer = scopeVendorId ? "None" : "Admin (Plan Covered)";
-          adminRiderShare = rawRiderShare;
-        } else {
-          riderPayer = "Vendor";
-          vendorRiderShare = rawRiderShare;
-        }
-      }
-
-      // In vendor view, hide rider payout share if vendor is not paying for the rider
-      const riderPayoutShare = scopeVendorId ? vendorRiderShare : rawRiderShare;
+      const riderPayer: ProductFinancialRow["riderPayoutPayer"] = "None";
+      const riderPayoutShare = 0;
 
       let profitBeforeDiscounts: number | null = null;
       let profitAfterDiscounts: number | null = null;
@@ -341,31 +354,27 @@ async function buildBreakdownsForOrders(
         hasKnownCostForSplit = true;
         if (scopeVendorId) {
           profitBeforeDiscounts = cleanDecimal(
-            originalTotal - totalCost - platformCommission - vendorRiderShare
+            originalTotal - totalCost - platformCommission
           );
           profitAfterDiscounts = cleanDecimal(
-            finalCustomerPaid - totalCost - platformCommission - vendorRiderShare
+            finalCustomerPaid - totalCost - platformCommission
           );
           vendorProfitAcc += profitAfterDiscounts;
         } else {
-          profitBeforeDiscounts = cleanDecimal(
-            originalTotal - totalCost - rawRiderShare
-          );
-          profitAfterDiscounts = cleanDecimal(
-            finalCustomerPaid - totalCost - rawRiderShare
-          );
+          profitBeforeDiscounts = cleanDecimal(originalTotal - totalCost);
+          profitAfterDiscounts = cleanDecimal(finalCustomerPaid - totalCost);
 
           if (!itemVendorId) {
             adminProfitAcc += profitAfterDiscounts;
           } else {
             const vendorNetRevenue = Math.max(0, soldTotal - vendorCouponAllocated);
             const itemVendorProfit = cleanDecimal(
-              vendorNetRevenue - totalCost - platformCommission - vendorRiderShare
+              vendorNetRevenue - totalCost - platformCommission
             );
             const platformPromoAbsorbed =
               Math.max(0, orderCouponAllocated - vendorCouponAllocated) + pointsValueAllocated;
             const itemAdminProfit = cleanDecimal(
-              platformCommission - platformPromoAbsorbed - adminRiderShare
+              platformCommission - platformPromoAbsorbed
             );
             vendorProfitAcc += itemVendorProfit;
             adminProfitAcc += itemAdminProfit;
@@ -418,43 +427,32 @@ async function buildBreakdownsForOrders(
       : orderPointsRedeemed;
     const commissionSum = cleanDecimal(productRows.reduce((s, r) => s + r.platformCommission, 0));
 
-    const orderShareRatio = scopeVendorId ? soldSum / allocBase : 1;
-    const scopedDeliveryCharge = scopeVendorId ? 0 : cleanDecimal(deliveryCharge * orderShareRatio);
+    const scopedDeliveryCharge = scopeVendorId ? 0 : cleanDecimal(deliveryCharge);
+    const adminRiderPayout = scopeVendorId ? 0 : orderAdminRiderPayout;
+    const vendorRiderPayout = scopeVendorId
+      ? (() => {
+          const st = planMap.get(scopeVendorId);
+          const covered = Boolean(st?.isLive && planCoversDelivery(st.plan));
+          return covered ? 0 : cleanDecimal(totalOrderRiderPayout);
+        })()
+      : orderVendorRiderPayout;
     const scopedRiderPayout = scopeVendorId
-      ? cleanDecimal(productRows.reduce((s, r) => s + r.riderPayoutShare, 0))
+      ? vendorRiderPayout
       : cleanDecimal(totalOrderRiderPayout);
-
-    const adminRiderPayout = scopeVendorId
-      ? 0
-      : cleanDecimal(
-          productRows
-            .filter((r) => r.riderPayoutPayer === "Admin" || r.riderPayoutPayer === "Admin (Plan Covered)")
-            .reduce((s, r) => s + r.riderPayoutShare, 0)
-        );
-    const vendorRiderPayout = cleanDecimal(
-      productRows
-        .filter((r) => r.riderPayoutPayer === "Vendor")
-        .reduce((s, r) => s + r.riderPayoutShare, 0)
-    );
 
     const adminProfit =
       !scopeVendorId && hasKnownCostForSplit
-        ? cleanDecimal(adminProfitAcc + scopedDeliveryCharge)
+        ? cleanDecimal(adminProfitAcc + scopedDeliveryCharge - adminRiderPayout)
         : null;
-    const vendorProfit = hasKnownCostForSplit ? cleanDecimal(vendorProfitAcc) : null;
+    const vendorProfit = hasKnownCostForSplit
+      ? cleanDecimal(vendorProfitAcc - vendorRiderPayout)
+      : null;
 
-    let riderPayoutPayer: OrderFinancialBreakdown["riderPayoutPayer"] = "None";
-    if (scopedRiderPayout > 0) {
-      if (adminRiderPayout > 0 && vendorRiderPayout > 0) {
-        riderPayoutPayer = "Shared (Admin & Vendor)";
-      } else if (vendorRiderPayout > 0) {
-        riderPayoutPayer = "Vendor";
-      } else if (productRows.some((r) => r.riderPayoutPayer === "Admin (Plan Covered)")) {
-        riderPayoutPayer = "Admin (Plan Covered)";
-      } else {
-        riderPayoutPayer = "Admin";
-      }
-    }
+    const riderPayoutPayer: OrderFinancialBreakdown["riderPayoutPayer"] = scopeVendorId
+      ? vendorRiderPayout > 0
+        ? "Vendor"
+        : "None"
+      : orderRiderPayer;
 
     const missingCostCount = productRows.filter((r) => r.totalCost == null).length;
     const knownCostSum = cleanDecimal(
@@ -505,7 +503,18 @@ async function buildBreakdownsForOrders(
         const gPoints = cleanDecimal(groupItems.reduce((s, r) => s + r.pointsValueAllocated, 0));
         const gPaid = cleanDecimal(groupItems.reduce((s, r) => s + r.finalCustomerPaid, 0));
         const gComm = cleanDecimal(groupItems.reduce((s, r) => s + r.platformCommission, 0));
-        const gRider = cleanDecimal(groupItems.reduce((s, r) => s + r.riderPayoutShare, 0));
+        const gRider = isAdminGroup
+          ? adminRiderPayout
+          : !scopeVendorId && orderRiderPayer === "Vendor"
+            ? (() => {
+                const vid = ownerKey.replace("vendor:", "");
+                const st = planMap.get(vid);
+                const covered = Boolean(st?.isLive && planCoversDelivery(st.plan));
+                return covered ? 0 : vendorRiderPayout;
+              })()
+            : scopeVendorId
+              ? vendorRiderPayout
+              : 0;
         const missingCost = groupItems.some((r) => r.totalCost == null);
         const gCost = missingCost
           ? null
@@ -516,11 +525,6 @@ async function buildBreakdownsForOrders(
           if (isAdminGroup) {
             gNetProfit = cleanDecimal(gPaid - gCost - gRider);
           } else {
-            const gVendorRider = cleanDecimal(
-              groupItems
-                .filter((r) => r.riderPayoutPayer === "Vendor")
-                .reduce((s, r) => s + r.riderPayoutShare, 0)
-            );
             const gVendorNet = cleanDecimal(
               groupItems.reduce((s, r) => {
                 const vo = r.vendorId ? voMap.get(`${orderId}:${r.vendorId}`) : null;
@@ -531,7 +535,7 @@ async function buildBreakdownsForOrders(
                 return s + Math.max(0, r.soldTotal - vCoupon);
               }, 0)
             );
-            gNetProfit = cleanDecimal(gVendorNet - gCost - gComm - gVendorRider);
+            gNetProfit = cleanDecimal(gVendorNet - gCost - gComm - gRider);
           }
         }
 
