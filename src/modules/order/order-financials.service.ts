@@ -63,6 +63,8 @@ export interface OrderFinancialBreakdown {
   finalCustomerPaid: number;
   expectedProfitWithoutDiscounts: number | null;
   expectedProfitWithDiscounts: number | null;
+  adminProfit: number | null;
+  vendorProfit: number | null;
   moneyFlow: {
     customerPaid: number;
     toVendors: number;
@@ -88,6 +90,8 @@ export interface FinancialAnalyticsSummary {
   totalCustomerPaid: number;
   totalProfitWithoutDiscounts: number;
   totalProfitWithDiscounts: number;
+  totalAdminProfit: number;
+  totalVendorProfit: number;
 }
 
 function shortOrderNumber(id: unknown): string {
@@ -204,6 +208,9 @@ async function buildBreakdownsForOrders(
         : "pending";
 
     const productRows: ProductFinancialRow[] = [];
+    let adminProfitAcc = 0;
+    let vendorProfitAcc = 0;
+    let hasKnownCostForSplit = false;
 
     for (const item of rawItems) {
       const prodId = String(item.productId || "");
@@ -229,9 +236,25 @@ async function buildBreakdownsForOrders(
       const productDiscount = cleanDecimal(Math.max(0, originalTotal - soldTotal));
 
       const shareRatio = soldTotal / allocBase;
-      const couponDiscountAllocated = cleanDecimal(orderCouponDiscount * shareRatio);
-      const pointsValueAllocated = cleanDecimal(orderPointsDiscount * shareRatio);
-      const pointsRedeemedAllocated = Math.round(orderPointsRedeemed * shareRatio);
+      const vo = itemVendorId ? voMap.get(`${orderId}:${itemVendorId}`) : null;
+      const voSubtotal = Number(vo?.subtotal) || soldTotal;
+      const voCouponDiscount = Number(vo?.couponDiscount) || 0;
+
+      // In vendor view, only include coupon discounts that belong to this vendor's own coupon
+      // and exclude platform-funded points discounts.
+      const vendorCouponAllocated =
+        voCouponDiscount > 0 && voSubtotal > 0
+          ? cleanDecimal(voCouponDiscount * (soldTotal / voSubtotal))
+          : 0;
+      const orderCouponAllocated = cleanDecimal(orderCouponDiscount * shareRatio);
+      const couponDiscountAllocated = scopeVendorId ? vendorCouponAllocated : orderCouponAllocated;
+
+      const pointsValueAllocated = scopeVendorId
+        ? 0
+        : cleanDecimal(orderPointsDiscount * shareRatio);
+      const pointsRedeemedAllocated = scopeVendorId
+        ? 0
+        : Math.round(orderPointsRedeemed * shareRatio);
 
       const finalCustomerPaid = cleanDecimal(
         Math.max(0, soldTotal - couponDiscountAllocated - pointsValueAllocated)
@@ -251,7 +274,7 @@ async function buildBreakdownsForOrders(
         ? cleanDecimal(soldTotal * (commissionPercent / 100))
         : 0;
 
-      const riderPayoutShare = cleanDecimal(totalOrderRiderPayout * shareRatio);
+      const rawRiderShare = cleanDecimal(totalOrderRiderPayout * shareRatio);
       const freeDeliveryCovered = Boolean(
         itemVendorId &&
           vendorPlanState?.isLive &&
@@ -260,37 +283,59 @@ async function buildBreakdownsForOrders(
 
       let riderPayer: ProductFinancialRow["riderPayoutPayer"] = "None";
       let vendorRiderShare = 0;
-      if (riderPayoutShare > 0) {
+      let adminRiderShare = 0;
+      if (rawRiderShare > 0) {
         if (!itemVendorId) {
           riderPayer = "Admin";
+          adminRiderShare = rawRiderShare;
         } else if (freeDeliveryCovered) {
-          riderPayer = "Admin (Plan Covered)";
+          riderPayer = scopeVendorId ? "None" : "Admin (Plan Covered)";
+          adminRiderShare = rawRiderShare;
         } else {
           riderPayer = "Vendor";
-          vendorRiderShare = riderPayoutShare;
+          vendorRiderShare = rawRiderShare;
         }
       }
+
+      // In vendor view, hide rider payout share if vendor is not paying for the rider
+      const riderPayoutShare = scopeVendorId ? vendorRiderShare : rawRiderShare;
 
       let profitBeforeDiscounts: number | null = null;
       let profitAfterDiscounts: number | null = null;
 
       if (totalCost != null) {
+        hasKnownCostForSplit = true;
         if (scopeVendorId) {
-          // Vendor's own profit: revenue minus cost, platform commission, and vendor's rider share
           profitBeforeDiscounts = cleanDecimal(
             originalTotal - totalCost - platformCommission - vendorRiderShare
           );
           profitAfterDiscounts = cleanDecimal(
             finalCustomerPaid - totalCost - platformCommission - vendorRiderShare
           );
+          vendorProfitAcc += profitAfterDiscounts;
         } else {
-          // Admin / total chain profit: revenue minus product cost and rider payout
           profitBeforeDiscounts = cleanDecimal(
-            originalTotal - totalCost - riderPayoutShare
+            originalTotal - totalCost - rawRiderShare
           );
           profitAfterDiscounts = cleanDecimal(
-            finalCustomerPaid - totalCost - riderPayoutShare
+            finalCustomerPaid - totalCost - rawRiderShare
           );
+
+          if (!itemVendorId) {
+            adminProfitAcc += profitAfterDiscounts;
+          } else {
+            const vendorNetRevenue = Math.max(0, soldTotal - vendorCouponAllocated);
+            const itemVendorProfit = cleanDecimal(
+              vendorNetRevenue - totalCost - platformCommission - vendorRiderShare
+            );
+            const platformPromoAbsorbed =
+              Math.max(0, orderCouponAllocated - vendorCouponAllocated) + pointsValueAllocated;
+            const itemAdminProfit = cleanDecimal(
+              platformCommission - platformPromoAbsorbed - adminRiderShare
+            );
+            vendorProfitAcc += itemVendorProfit;
+            adminProfitAcc += itemAdminProfit;
+          }
         }
       }
 
@@ -340,21 +385,29 @@ async function buildBreakdownsForOrders(
     const commissionSum = cleanDecimal(productRows.reduce((s, r) => s + r.platformCommission, 0));
 
     const orderShareRatio = scopeVendorId ? soldSum / allocBase : 1;
-    const scopedDeliveryCharge = cleanDecimal(deliveryCharge * orderShareRatio);
-    const scopedRiderPayout = cleanDecimal(
-      productRows.reduce((s, r) => s + r.riderPayoutShare, 0)
-    );
+    const scopedDeliveryCharge = scopeVendorId ? 0 : cleanDecimal(deliveryCharge * orderShareRatio);
+    const scopedRiderPayout = scopeVendorId
+      ? cleanDecimal(productRows.reduce((s, r) => s + r.riderPayoutShare, 0))
+      : cleanDecimal(totalOrderRiderPayout);
 
-    const adminRiderPayout = cleanDecimal(
-      productRows
-        .filter((r) => r.riderPayoutPayer === "Admin" || r.riderPayoutPayer === "Admin (Plan Covered)")
-        .reduce((s, r) => s + r.riderPayoutShare, 0)
-    );
+    const adminRiderPayout = scopeVendorId
+      ? 0
+      : cleanDecimal(
+          productRows
+            .filter((r) => r.riderPayoutPayer === "Admin" || r.riderPayoutPayer === "Admin (Plan Covered)")
+            .reduce((s, r) => s + r.riderPayoutShare, 0)
+        );
     const vendorRiderPayout = cleanDecimal(
       productRows
         .filter((r) => r.riderPayoutPayer === "Vendor")
         .reduce((s, r) => s + r.riderPayoutShare, 0)
     );
+
+    const adminProfit =
+      !scopeVendorId && hasKnownCostForSplit
+        ? cleanDecimal(adminProfitAcc + scopedDeliveryCharge)
+        : null;
+    const vendorProfit = hasKnownCostForSplit ? cleanDecimal(vendorProfitAcc) : null;
 
     let riderPayoutPayer: OrderFinancialBreakdown["riderPayoutPayer"] = "None";
     if (scopedRiderPayout > 0) {
@@ -445,6 +498,8 @@ async function buildBreakdownsForOrders(
       finalCustomerPaid,
       expectedProfitWithoutDiscounts,
       expectedProfitWithDiscounts,
+      adminProfit,
+      vendorProfit,
       moneyFlow: {
         customerPaid: finalCustomerPaid,
         toVendors,
@@ -478,6 +533,8 @@ function summarizeBreakdowns(rows: OrderFinancialBreakdown[]): FinancialAnalytic
     totalCustomerPaid: sum((r) => r.finalCustomerPaid),
     totalProfitWithoutDiscounts: sum((r) => r.expectedProfitWithoutDiscounts ?? 0),
     totalProfitWithDiscounts: sum((r) => r.expectedProfitWithDiscounts ?? 0),
+    totalAdminProfit: sum((r) => r.adminProfit ?? 0),
+    totalVendorProfit: sum((r) => r.vendorProfit ?? 0),
   };
 }
 
