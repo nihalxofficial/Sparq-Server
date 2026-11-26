@@ -637,67 +637,75 @@ export async function createOrder(data: CreateOrderInput, userId: string) {
     return order;
   });
 
-  // Written after the commit on purpose: a rolled-back order never shows up as
-  // a notification, and a feed problem can never undo a real order.
+  // Post-commit side effects are best-effort and must NOT hold the response.
+  // The order is already committed and the customer is waiting to be sent to
+  // the receipt, while an SMTP send can take several seconds each — waiting on
+  // the feed and mail fan-out is what made a placed order look like a failure.
+  // Nothing here is transactional: a rolled-back order never reaches this
+  // point, and a broken mail server can never undo a real order.
   const orderRef = order._id.toString();
   const shortNumber = shortOrderNumber(order._id);
-
-  await recordActivity({
-    type: "order",
-    title: `New order ${shortNumber}`,
-    detail: orderSummary(order),
-    ref: orderRef,
-  });
-
-  // Cash on delivery is not money in hand yet: its payment row starts as
-  // "pending" and only settles at delivery, so the line has to say the same
-  // thing the transactions screen shows instead of claiming a payment landed.
   const paymentLabel = PAYMENT_LABELS[order.paymentMethod] || order.paymentMethod;
   const isCashOnDelivery = order.paymentMethod === "cod";
 
-  await recordActivity({
-    type: "transaction",
-    title: isCashOnDelivery
-      ? `Cash on delivery order ${shortNumber}`
-      : `Payment recorded for ${shortNumber}`,
-    detail: isCashOnDelivery
-      ? `${paymentLabel} · ${money(order.totalAmount)} due on delivery`
-      : `${paymentLabel} · ${money(order.totalAmount)}`,
-    ref: orderRef,
-  });
+  void (async () => {
+    try {
+      await recordActivity({
+        type: "order",
+        title: `New order ${shortNumber}`,
+        detail: orderSummary(order),
+        ref: orderRef,
+      });
 
-  // The customer's own copy of the same event: one line in their feed and the
-  // confirmation email. Also post-commit, so a rolled-back order announces
-  // nothing.
-  await notifyOrderPlaced(order);
+      // Cash on delivery is not money in hand yet: its payment row starts as
+      // "pending" and only settles at delivery, so the line has to say the same
+      // thing the transactions screen shows instead of claiming a payment landed.
+      await recordActivity({
+        type: "transaction",
+        title: isCashOnDelivery
+          ? `Cash on delivery order ${shortNumber}`
+          : `Payment recorded for ${shortNumber}`,
+        detail: isCashOnDelivery
+          ? `${paymentLabel} · ${money(order.totalAmount)} due on delivery`
+          : `${paymentLabel} · ${money(order.totalAmount)}`,
+        ref: orderRef,
+      });
 
-  // Each seller is told their part is in — one line in their bell and an email.
-  const sellerGroups = await VendorOrder.find({ orderId: order._id })
-    .select("vendorId orderNumber customerName city items")
-    .lean();
-  for (const group of sellerGroups) {
-    await notifyVendor({
-      userId: String(group.vendorId),
-      type: "vendor_order",
-      title: `New order ${group.orderNumber || shortNumber}`,
-      detail: `${group.customerName || "Customer"} · ${group.items?.length ?? 0} item(s)${group.city ? ` · ${group.city}` : ""}`,
-      ref: orderRef,
-      emailSubject: `New order ${group.orderNumber || shortNumber}`,
-    });
-  }
+      // The customer's own copy of the same event: one line in their feed and
+      // the confirmation email.
+      await notifyOrderPlaced(order);
 
-  // The store team lives in the dashboard, so the shared inbox is told too.
-  await notifyAdminEmail({
-    heading: `New order ${shortNumber}`,
-    intro: orderSummary(order),
-    orderNumber: shortNumber,
-    rows: [
-      { label: "Customer", value: (order as any).shippingAddress?.fullName },
-      { label: "Total", value: money((order as any).totalAmount) },
-    ],
-    actionLabel: "Open orders",
-    actionPath: "/dashboard/admin/orders",
-  });
+      // Each seller is told their part is in — one line in their bell and an email.
+      const sellerGroups = await VendorOrder.find({ orderId: order._id })
+        .select("vendorId orderNumber customerName city items")
+        .lean();
+      for (const group of sellerGroups) {
+        await notifyVendor({
+          userId: String(group.vendorId),
+          type: "vendor_order",
+          title: `New order ${group.orderNumber || shortNumber}`,
+          detail: `${group.customerName || "Customer"} · ${group.items?.length ?? 0} item(s)${group.city ? ` · ${group.city}` : ""}`,
+          ref: orderRef,
+          emailSubject: `New order ${group.orderNumber || shortNumber}`,
+        });
+      }
+
+      // The store team lives in the dashboard, so the shared inbox is told too.
+      await notifyAdminEmail({
+        heading: `New order ${shortNumber}`,
+        intro: orderSummary(order),
+        orderNumber: shortNumber,
+        rows: [
+          { label: "Customer", value: (order as any).shippingAddress?.fullName },
+          { label: "Total", value: money((order as any).totalAmount) },
+        ],
+        actionLabel: "Open orders",
+        actionPath: "/dashboard/admin/orders",
+      });
+    } catch (error) {
+      console.error("[order] post-commit notifications failed:", error);
+    }
+  })();
 
   return order;
 }
