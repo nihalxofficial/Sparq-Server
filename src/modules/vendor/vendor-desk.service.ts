@@ -41,7 +41,7 @@ export async function getVendorDeskReport(query: VendorDeskQuery = {}) {
 
   const [plans, stores, liveSubs, paidSubs, orders] = await Promise.all([
     listPlans(),
-    VendorStore.find().select("name vendorId createdAt").lean(),
+    VendorStore.find().select("name userId createdAt").lean(),
     VendorSubscription.find({ status: { $in: ["active", "grace"] } })
       .select("vendorId plan billingCycle pricePaid endDate status")
       .lean(),
@@ -69,7 +69,7 @@ export async function getVendorDeskReport(query: VendorDeskQuery = {}) {
 
   const storeById = new Map<string, string>();
   for (const store of stores as any[]) {
-    storeById.set(String(store.vendorId), String(store.name || ""));
+    storeById.set(String(store.userId), String(store.name || ""));
   }
 
   // One bucket per month in the window, so a quiet month draws a zero instead
