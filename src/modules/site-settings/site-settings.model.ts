@@ -92,6 +92,8 @@ const vendorPlacementPointsSchema = new Schema(
     yearlyBonus: { type: Number, default: 5_000, min: 0 },
     /** Points each day of the placement adds, so a longer pin ranks higher. */
     perDay: { type: Number, default: 1, min: 0 },
+    /** Points a seller earns for each unit actually sold. */
+    sellPerUnit: { type: Number, default: 10, min: 0 },
   },
   { _id: false }
 );

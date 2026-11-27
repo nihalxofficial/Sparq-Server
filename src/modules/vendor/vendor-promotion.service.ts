@@ -4,6 +4,8 @@ import { Product } from "../product/product.model";
 import * as promotionService from "./featured-promotion.service";
 import { requireTradingStore } from "./vendor-store.service";
 import { VendorStore } from "./vendor-store.model";
+import { VendorOrder } from "./vendor-order.model";
+import { FeaturedPromotion } from "./featured-promotion.model";
 import { assertWithinLimit, getVendorPlanState } from "./vendor-subscription.service";
 import { isLiveVendorProductStatus, type BillingCycle } from "./vendor.types";
 import type { FeatureProductInput, PromotionQuery } from "./featured-promotion.validator";
@@ -153,4 +155,81 @@ export async function listVendorPlanWindows() {
   // Highest-earning shops first, so the picker leads with the ones that rank.
   rows.sort((a, b) => b.placementPoints - a.placementPoints);
   return rows;
+}
+
+/**
+ * A seller's points, and where they came from.
+ *
+ * Sell points are earned on delivered units; placement points are the score of
+ * the placements still running. The total is what the seller's own ranking is
+ * read from, and the position places them among the trading shops.
+ */
+export async function getVendorPoints(userId: string) {
+  const points = await promotionService.placementPoints();
+  const perUnit = Number(points.sellPerUnit) || 0;
+  const myId = new Types.ObjectId(userId);
+
+  const [sellRows, placeRows, ownProducts] = await Promise.all([
+    VendorOrder.aggregate([
+      { $match: { status: "delivered" } },
+      { $unwind: "$items" },
+      { $group: { _id: "$vendorId", units: { $sum: "$items.quantity" } } },
+    ]),
+    FeaturedPromotion.aggregate([
+      { $match: { status: "active", endsAt: { $gt: new Date() } } },
+      { $group: { _id: "$vendorId", points: { $sum: "$featuredRank" } } },
+    ]),
+    VendorOrder.aggregate([
+      { $match: { vendorId: myId, status: "delivered" } },
+      { $unwind: "$items" },
+      {
+        $group: {
+          _id: "$items.productId",
+          title: { $first: "$items.title" },
+          units: { $sum: "$items.quantity" },
+        },
+      },
+      { $sort: { units: -1 } },
+      { $limit: 5 },
+    ]),
+  ]);
+
+  const map = new Map<string, { sellUnits: number; placementPoints: number }>();
+  const ensure = (key: string) => {
+    let row = map.get(key);
+    if (!row) {
+      row = { sellUnits: 0, placementPoints: 0 };
+      map.set(key, row);
+    }
+    return row;
+  };
+  for (const row of sellRows) ensure(String(row._id)).sellUnits = Number(row.units) || 0;
+  for (const row of placeRows) ensure(String(row._id)).placementPoints = Number(row.points) || 0;
+
+  const totals = [...map.entries()].map(([vendorId, row]) => ({
+    vendorId,
+    total: row.sellUnits * perUnit + row.placementPoints,
+  }));
+  totals.sort((a, b) => b.total - a.total);
+
+  const mine = map.get(userId) ?? { sellUnits: 0, placementPoints: 0 };
+  const sellPoints = mine.sellUnits * perUnit;
+  const myTotal = sellPoints + mine.placementPoints;
+  const position = totals.filter((t) => t.total > myTotal).length + 1;
+
+  return {
+    perUnit,
+    sellPoints,
+    soldUnits: mine.sellUnits,
+    placementPoints: mine.placementPoints,
+    totalPoints: myTotal,
+    position,
+    totalVendors: totals.length,
+    products: ownProducts.map((row: any) => ({
+      productId: String(row._id),
+      title: row.title || "A listing",
+      units: Number(row.units) || 0,
+      points: (Number(row.units) || 0) * perUnit,
+    })),
+  };
 }

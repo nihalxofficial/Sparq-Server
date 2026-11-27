@@ -11,6 +11,7 @@ const router = Router();
 router.use(requireAuth, requireRole("vendor"));
 
 router.get("/", controller.listMyPromotions);
+router.get("/points", controller.getMyPoints);
 router.post("/", validate(featureProductSchema), controller.featureMyProduct);
 router.delete("/:id", controller.cancelMyPromotion);
 

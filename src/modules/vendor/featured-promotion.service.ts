@@ -75,6 +75,8 @@ export const DEFAULT_PLACEMENT_POINTS = {
   advanced: 30_000,
   yearlyBonus: 5_000,
   perDay: 1,
+  /** Points a seller earns for each unit actually sold. */
+  sellPerUnit: 10,
 };
 
 export type PlacementPoints = typeof DEFAULT_PLACEMENT_POINTS;
@@ -91,6 +93,7 @@ export async function placementPoints(): Promise<PlacementPoints> {
     advanced: Number(raw.advanced ?? DEFAULT_PLACEMENT_POINTS.advanced) || 0,
     yearlyBonus: Number(raw.yearlyBonus ?? DEFAULT_PLACEMENT_POINTS.yearlyBonus) || 0,
     perDay: Number(raw.perDay ?? DEFAULT_PLACEMENT_POINTS.perDay) || 0,
+    sellPerUnit: Number(raw.sellPerUnit ?? DEFAULT_PLACEMENT_POINTS.sellPerUnit) || 0,
   };
 }
 

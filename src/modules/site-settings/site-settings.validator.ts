@@ -59,6 +59,7 @@ export const updateSiteSettingsSchema = z
         advanced: z.coerce.number().min(0).optional(),
         yearlyBonus: z.coerce.number().min(0).optional(),
         perDay: z.coerce.number().min(0).optional(),
+        sellPerUnit: z.coerce.number().min(0).optional(),
       })
       .optional(),
 

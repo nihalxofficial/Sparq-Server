@@ -31,3 +31,9 @@ export const cancelMyPromotion = catchAsync(async (req, res) => {
   );
   apiResponse(res, 200, promotion, "Placement ended");
 });
+
+/** The seller's points and where they came from, for their own board. */
+export const getMyPoints = catchAsync(async (req, res) => {
+  const result = await promotionService.getVendorPoints(req.user!.id);
+  apiResponse(res, 200, result, "Points fetched successfully");
+});
