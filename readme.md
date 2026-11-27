@@ -62,6 +62,8 @@ Request -> verify JWT -> check role -> validate (Zod) -> controller -> service -
 
 ## Recent Changes
 
+- **Promotions:** featured-placement points (per plan tier, yearly bonus, per day) are read from site settings; /api/promotions/vendor-plans returns each seller's window and points, highest first.
+- **Coupons:** the subscription sweep trims a seller's coupons to Free's allowance on expiry (and on downgrade).
 - **Promotions:** a new /api/promotions/vendor-plans read lists each seller's featured window for the admin grant picker.
 - **Promotions:** a seller's featured length is chosen within their plan window; an admin grant is capped at the seller's window; a downgrade to Free ends the placements and pauses coupons past the new allowance.
 - **Product permissions:** the admin update/delete refuses a vendor-owned listing (archive it instead).
