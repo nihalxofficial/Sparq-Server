@@ -30,7 +30,6 @@ const BLANK_PLAN = {
   featuredDurationDays: 0,
   activeCoupons: 0,
   analytics: "basic",
-  salesReports: "basic",
   exports: "none",
   storeCustomization: "basic",
   promotionalCampaigns: "none",
@@ -81,7 +80,6 @@ function fromRow(row: any): VendorPlan {
       Number(row.featuredDurationDays ?? fallback.featuredDurationDays) || 0,
     activeCoupons: Number(row.activeCoupons ?? fallback.activeCoupons) || 0,
     analytics: row.analytics ?? fallback.analytics,
-    salesReports: row.salesReports ?? fallback.salesReports,
     exports: normalizeExports(row.exports ?? fallback.exports, String(row.planId)),
     storeCustomization: row.storeCustomization ?? fallback.storeCustomization,
     promotionalCampaigns: row.promotionalCampaigns ?? fallback.promotionalCampaigns,
@@ -189,7 +187,6 @@ export interface PlanInput {
   featuredDurationDays?: number;
   activeCoupons?: number;
   analytics?: string;
-  salesReports?: string;
   exports?: string;
   storeCustomization?: string;
   promotionalCampaigns?: string;
@@ -215,7 +212,6 @@ const WRITABLE_FIELDS = [
   "featuredDurationDays",
   "activeCoupons",
   "analytics",
-  "salesReports",
   "exports",
   "storeCustomization",
   "promotionalCampaigns",

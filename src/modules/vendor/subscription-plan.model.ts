@@ -23,7 +23,6 @@ const subscriptionPlanSchema = new Schema(
     activeCoupons: { type: Number, required: true, min: 0 },
 
     analytics: { type: String, enum: ["basic", "detailed", "advanced"], required: true },
-    salesReports: { type: String, enum: ["basic", "advanced"], required: true },
     exports: { type: String, enum: ["none", "csv", "pdf", "csv+pdf"], required: true },
     storeCustomization: { type: String, enum: ["basic", "enhanced", "full"], required: true },
     promotionalCampaigns: { type: String, enum: ["none", "limited", "priority"], required: true },

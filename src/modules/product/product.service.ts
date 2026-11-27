@@ -704,6 +704,15 @@ export async function updateProduct(id: string, data: UpdateProductInput) {
   const current = await Product.findById(id);
   if (!current) throw new ApiError(404, "Product not found");
 
+  // The desk edits only its own platform stock. A seller's listing belongs to
+  // the seller; the desk can archive or review it, but must not change it.
+  if (current.vendorId) {
+    throw new ApiError(
+      403,
+      "Only the seller can edit this listing. You can archive it instead."
+    );
+  }
+
   // A changed slug must stay unique. Create answers a clash with a clear 409;
   // an update has to say the same thing instead of tripping the unique index
   // and answering with an unreadable duplicate-key 500.

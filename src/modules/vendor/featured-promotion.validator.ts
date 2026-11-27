@@ -23,9 +23,14 @@ export const promotionQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
-/** The seller only ever names the product. Everything else comes from the token. */
+/**
+ * The seller names the product, and — optionally — how long to pin it, up to the
+ * window their plan allows. The plan is still the ceiling: the server caps the
+ * request at the plan's own length and at the period it has left.
+ */
 export const featureProductSchema = z.object({
   productId: objectId,
+  days: z.coerce.number().int().min(1).max(365).optional(),
 });
 
 /**

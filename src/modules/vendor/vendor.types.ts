@@ -148,7 +148,6 @@ export interface VendorPlanLimits {
   /** Coupons that may be active at the same time. */
   activeCoupons: number;
   analytics: "basic" | "detailed" | "advanced";
-  salesReports: "basic" | "advanced";
   exports: PlanExports;
   storeCustomization: "basic" | "enhanced" | "full";
   promotionalCampaigns: "none" | "limited" | "priority";
@@ -209,7 +208,6 @@ export const DEFAULT_VENDOR_PLANS: Record<string, VendorPlan> = {
     featuredDurationDays: 0,
     activeCoupons: 2,
     analytics: "basic",
-    salesReports: "basic",
     exports: "none",
     storeCustomization: "basic",
     promotionalCampaigns: "none",
@@ -234,7 +232,6 @@ export const DEFAULT_VENDOR_PLANS: Record<string, VendorPlan> = {
     featuredDurationDays: 7,
     activeCoupons: 10,
     analytics: "detailed",
-    salesReports: "advanced",
     exports: "pdf",
     storeCustomization: "enhanced",
     promotionalCampaigns: "limited",
@@ -261,7 +258,6 @@ export const DEFAULT_VENDOR_PLANS: Record<string, VendorPlan> = {
     featuredDurationDays: 30,
     activeCoupons: 30,
     analytics: "advanced",
-    salesReports: "advanced",
     exports: "csv+pdf",
     storeCustomization: "full",
     promotionalCampaigns: "priority",
