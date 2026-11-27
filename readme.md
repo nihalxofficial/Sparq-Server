@@ -62,6 +62,7 @@ Request -> verify JWT -> check role -> validate (Zod) -> controller -> service -
 
 ## Recent Changes
 
+- **Promotions:** a seller's featured length is chosen within their plan window; an admin grant is capped at the seller's window; a downgrade to Free ends the placements and pauses coupons past the new allowance.
 - **Product permissions:** the admin update/delete refuses a vendor-owned listing (archive it instead).
 - **Plan cleanup:** removed the dead salesReports field; nalytics and exports already gate reports.
 - **Frozen order figures** — a group's commission rate, delivery cover and per-line cost are copied onto the order at checkout, so a plan or cost change never re-prices a completed order.
