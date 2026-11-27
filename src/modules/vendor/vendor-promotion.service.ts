@@ -3,7 +3,8 @@ import { ApiError } from "../../utils/apiError";
 import { Product } from "../product/product.model";
 import * as promotionService from "./featured-promotion.service";
 import { requireTradingStore } from "./vendor-store.service";
-import { assertWithinLimit } from "./vendor-subscription.service";
+import { VendorStore } from "./vendor-store.model";
+import { assertWithinLimit, getVendorPlanState } from "./vendor-subscription.service";
 import { isLiveVendorProductStatus, type BillingCycle } from "./vendor.types";
 import type { FeatureProductInput, PromotionQuery } from "./featured-promotion.validator";
 
@@ -106,4 +107,38 @@ export async function featureMyProduct(userId: string, input: FeatureProductInpu
  */
 export async function cancelMyPromotion(userId: string, id: string) {
   return promotionService.endPromotion(id, "Ended by the seller", { vendorId: userId });
+}
+
+/**
+ * Each seller's featured window, for the store team's grant picker.
+ *
+ * The admin grant is capped at the seller's plan, so the desk has to see that cap
+ * before it types a number: the plan's own window and how many days are left in
+ * the period. A seller with no live plan reads a zero window, which is exactly
+ * why their listing cannot be featured.
+ */
+export async function listVendorPlanWindows() {
+  const stores = await VendorStore.find({ status: "active" })
+    .select("userId name slug")
+    .lean();
+
+  const rows = await Promise.all(
+    stores.map(async (store: any) => {
+      const state = await getVendorPlanState(String(store.userId));
+      const windowDays = Number(state.plan.featuredDurationDays) || 0;
+      const daysLeft = state.effectiveUntil
+        ? Math.max(0, Math.ceil((state.effectiveUntil.getTime() - Date.now()) / DAY_MS))
+        : 0;
+      return {
+        vendorId: String(store.userId),
+        storeName: store.name || "",
+        plan: state.plan.name,
+        isLive: state.isLive,
+        featuredWindowDays: windowDays,
+        planDaysRemaining: daysLeft,
+      };
+    })
+  );
+
+  return rows;
 }

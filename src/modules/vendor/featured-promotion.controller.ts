@@ -3,6 +3,7 @@ import { apiResponse } from "../../utils/apiResponse";
 import { parseQuery } from "../../utils/validate";
 import { promotionQuerySchema } from "./featured-promotion.validator";
 import * as promotionService from "./featured-promotion.service";
+import * as vendorPromotionService from "./vendor-promotion.service";
 
 /**
  * The store team's promotions board.
@@ -24,6 +25,12 @@ export const getPromotions = catchAsync(async (req, res) => {
 export const grantPromotion = catchAsync(async (req, res) => {
   const promotion = await promotionService.grantByAdmin(req.body);
   apiResponse(res, 201, promotion, "Placement granted");
+});
+
+/** Each seller's plan window, so the grant picker can show the cap it will apply. */
+export const getVendorPlanWindows = catchAsync(async (_req, res) => {
+  const rows = await vendorPromotionService.listVendorPlanWindows();
+  apiResponse(res, 200, rows, "Vendor plan windows fetched");
 });
 
 /** Ends one placement with the reason the seller will read. */

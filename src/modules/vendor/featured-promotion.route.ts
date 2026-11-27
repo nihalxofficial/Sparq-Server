@@ -19,6 +19,7 @@ router.get("/expire", requireCronOrAdmin, controller.expirePromotions);
 router.use(requireAuth, requireRole("admin"));
 
 router.get("/", controller.getPromotions);
+router.get("/vendor-plans", controller.getVendorPlanWindows);
 router.post("/", validate(grantPromotionSchema), controller.grantPromotion);
 
 /**
