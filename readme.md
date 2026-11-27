@@ -62,6 +62,8 @@ Request -> verify JWT -> check role -> validate (Zod) -> controller -> service -
 
 ## Recent Changes
 
+- **Product permissions:** the admin update/delete refuses a vendor-owned listing (archive it instead).
+- **Plan cleanup:** removed the dead salesReports field; nalytics and exports already gate reports.
 - **Frozen order figures** — a group's commission rate, delivery cover and per-line cost are copied onto the order at checkout, so a plan or cost change never re-prices a completed order.
 - **Refund on any cancellation** — cancelling an order by anyone marks its payment `refunded`, not `failed`.
 - **Notifications run after the response** — the feed and mail fan-out no longer holds the order response, so a slow inbox cannot make a placed order look like a failure.
