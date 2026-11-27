@@ -7,6 +7,7 @@ import { FeaturedPromotion, type PromotionKind } from "./featured-promotion.mode
 import { notifyAdminPlanSpotlight, notifyVendorPromotion } from "./vendor.notifications";
 import { isLiveVendorProductStatus, planTierRank, type BillingCycle, type VendorPlanId } from "./vendor.types";
 import { getPlan } from "./vendor-plan.service";
+import { SiteSettings } from "../site-settings/site-settings.model";
 import type { GrantPromotionInput } from "./featured-promotion.validator";
 
 /**
@@ -59,8 +60,56 @@ const MAX_PROMOTION_DAYS = 365;
  * joining the plan table on every read.
  */
 const ADMIN_FEATURED_RANK = 1_000_000;
-const TIER_STEP = 10_000;
-const YEARLY_BONUS = 5_000;
+
+/**
+ * The store owner's featured-placement points, from site settings.
+ *
+ * The order the featured shelves are sold in is a business rule: a higher plan
+ * tier earns more, a yearly period earns a bonus, and a longer pin earns a
+ * little more. The defaults match what the store shipped with, so an install
+ * that never opens the setting behaves exactly as before.
+ */
+export const DEFAULT_PLACEMENT_POINTS = {
+  basic: 10_000,
+  detailed: 20_000,
+  advanced: 30_000,
+  yearlyBonus: 5_000,
+  perDay: 1,
+};
+
+export type PlacementPoints = typeof DEFAULT_PLACEMENT_POINTS;
+
+export async function placementPoints(): Promise<PlacementPoints> {
+  const row: any = await SiteSettings.findOne()
+    .select("vendorPlacementPoints")
+    .lean()
+    .catch(() => null);
+  const raw = row?.vendorPlacementPoints || {};
+  return {
+    basic: Number(raw.basic ?? DEFAULT_PLACEMENT_POINTS.basic) || 0,
+    detailed: Number(raw.detailed ?? DEFAULT_PLACEMENT_POINTS.detailed) || 0,
+    advanced: Number(raw.advanced ?? DEFAULT_PLACEMENT_POINTS.advanced) || 0,
+    yearlyBonus: Number(raw.yearlyBonus ?? DEFAULT_PLACEMENT_POINTS.yearlyBonus) || 0,
+    perDay: Number(raw.perDay ?? DEFAULT_PLACEMENT_POINTS.perDay) || 0,
+  };
+}
+
+/** The points one placement earns: tier + yearly bonus + per-day. */
+export function placementScore(
+  points: PlacementPoints,
+  analytics: string,
+  billingCycle: BillingCycle | null | undefined,
+  days: number
+): number {
+  const tier =
+    analytics === "advanced"
+      ? points.advanced
+      : analytics === "detailed"
+        ? points.detailed
+        : points.basic;
+  const length = Math.max(0, Math.min(Math.round(days) || 0, MAX_PROMOTION_DAYS));
+  return tier + (billingCycle === "yearly" ? points.yearlyBonus : 0) + length * points.perDay;
+}
 
 /**
  * The ordering key one placement writes onto what it lifts.
@@ -77,17 +126,16 @@ async function featuredRankFor(params: {
 }): Promise<number> {
   if (!params.vendorId) return ADMIN_FEATURED_RANK;
 
-  const length = Math.max(0, Math.min(Math.round(params.days) || 0, MAX_PROMOTION_DAYS));
-  let tier = 1;
+  let analytics = "basic";
   try {
-    tier = planTierRank(await getPlan(params.plan));
+    analytics = (await getPlan(params.plan)).analytics;
   } catch {
-    // The plan table no longer holds this row; the placement still ranks, just
-    // on the entry tier, rather than the sweep failing over one old plan.
-    tier = 1;
+    // The plan table no longer holds this row; the placement still ranks on the
+    // entry tier rather than the sweep failing over one old plan.
+    analytics = "basic";
   }
 
-  return tier * TIER_STEP + (params.billingCycle === "yearly" ? YEARLY_BONUS : 0) + length;
+  return placementScore(await placementPoints(), analytics, params.billingCycle, params.days);
 }
 
 function addDays(date: Date, days: number): Date {

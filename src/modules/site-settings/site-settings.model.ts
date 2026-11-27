@@ -79,6 +79,23 @@ const shippingConfigSchema = new Schema(
   { _id: false }
 );
 
+// ── Vendor featured-placement points ─────────────────────────────────────────
+// How much a placement is worth on the featured shelves. The store owner tunes
+// these and the ranking reads them, so the order the shelves are sold in is a
+// business rule rather than a constant buried in code.
+const vendorPlacementPointsSchema = new Schema(
+  {
+    basic: { type: Number, default: 10_000, min: 0 },
+    detailed: { type: Number, default: 20_000, min: 0 },
+    advanced: { type: Number, default: 30_000, min: 0 },
+    /** Extra points a yearly period adds over a monthly one. */
+    yearlyBonus: { type: Number, default: 5_000, min: 0 },
+    /** Points each day of the placement adds, so a longer pin ranks higher. */
+    perDay: { type: Number, default: 1, min: 0 },
+  },
+  { _id: false }
+);
+
 // ── About Page Content ───────────────────────────────────────────────────────
 // Every line of text shown on /about is edited here, so the store owner never
 // has to touch the code to change the story, the address note or the hours.
@@ -179,6 +196,9 @@ const siteSettingsSchema = new Schema(
 
     // ── Shipping & Delivery
     shipping: { type: shippingConfigSchema, default: () => ({}) },
+
+    // ── Vendor featured-placement points
+    vendorPlacementPoints: { type: vendorPlacementPointsSchema, default: () => ({}) },
 
     // ── Social Media
     socialLinks: { type: [socialLinkSchema], default: [] },

@@ -52,6 +52,16 @@ export const updateSiteSettingsSchema = z
       })
       .optional(),
 
+    vendorPlacementPoints: z
+      .object({
+        basic: z.coerce.number().min(0).optional(),
+        detailed: z.coerce.number().min(0).optional(),
+        advanced: z.coerce.number().min(0).optional(),
+        yearlyBonus: z.coerce.number().min(0).optional(),
+        perDay: z.coerce.number().min(0).optional(),
+      })
+      .optional(),
+
     socialLinks: z.array(z.record(z.string(), z.any())).optional(),
     brandLogos: z.array(z.record(z.string(), z.any())).optional(),
 

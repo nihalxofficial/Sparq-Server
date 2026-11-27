@@ -118,9 +118,10 @@ export async function cancelMyPromotion(userId: string, id: string) {
  * why their listing cannot be featured.
  */
 export async function listVendorPlanWindows() {
-  const stores = await VendorStore.find({ status: "active" })
-    .select("userId name slug")
-    .lean();
+  const [stores, points] = await Promise.all([
+    VendorStore.find({ status: "active" }).select("userId name slug").lean(),
+    promotionService.placementPoints(),
+  ]);
 
   const rows = await Promise.all(
     stores.map(async (store: any) => {
@@ -129,6 +130,14 @@ export async function listVendorPlanWindows() {
       const daysLeft = state.effectiveUntil
         ? Math.max(0, Math.ceil((state.effectiveUntil.getTime() - Date.now()) / DAY_MS))
         : 0;
+      // What a placement pinned for this plan's full window would earn, so the
+      // desk sees the same score the featured shelf uses to order the shops.
+      const placementPoints = promotionService.placementScore(
+        points,
+        state.plan.analytics,
+        (state.subscription?.billingCycle as BillingCycle) ?? null,
+        windowDays
+      );
       return {
         vendorId: String(store.userId),
         storeName: store.name || "",
@@ -136,9 +145,12 @@ export async function listVendorPlanWindows() {
         isLive: state.isLive,
         featuredWindowDays: windowDays,
         planDaysRemaining: daysLeft,
+        placementPoints: state.isLive ? placementPoints : 0,
       };
     })
   );
 
+  // Highest-earning shops first, so the picker leads with the ones that rank.
+  rows.sort((a, b) => b.placementPoints - a.placementPoints);
   return rows;
 }
