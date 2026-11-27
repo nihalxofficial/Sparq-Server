@@ -62,6 +62,7 @@ Request -> verify JWT -> check role -> validate (Zod) -> controller -> service -
 
 ## Recent Changes
 
+- **Cumulative points:** every plan period (Free included) writes a permanent VendorPointAward; a seller's plan points are the sum, plus sell points from delivered units.
 - **Vendor points:** GET /api/vendor-promotions/points computes sell points (delivered units × per-unit) + placement points (live placements), the total and the position; /api/promotions/vendor-plans also carries the points.
 - **Promotions:** featured-placement points (per plan tier, yearly bonus, per day) are read from site settings; /api/promotions/vendor-plans returns each seller's window and points, highest first.
 - **Coupons:** the subscription sweep trims a seller's coupons to Free's allowance on expiry (and on downgrade).
