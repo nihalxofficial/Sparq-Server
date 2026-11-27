@@ -5,7 +5,7 @@ import * as promotionService from "./featured-promotion.service";
 import { requireTradingStore } from "./vendor-store.service";
 import { VendorStore } from "./vendor-store.model";
 import { VendorOrder } from "./vendor-order.model";
-import { VendorPointAward } from "./vendor-point-award.model";
+import { readPointBalances, readPointHistory } from "./vendor-points.service";
 import { assertWithinLimit, getVendorPlanState } from "./vendor-subscription.service";
 import { isLiveVendorProductStatus, type BillingCycle } from "./vendor.types";
 import type { FeatureProductInput, PromotionQuery } from "./featured-promotion.validator";
@@ -120,9 +120,9 @@ export async function cancelMyPromotion(userId: string, id: string) {
  * why their listing cannot be featured.
  */
 export async function listVendorPlanWindows() {
-  const [stores, points] = await Promise.all([
+  const [stores, balances] = await Promise.all([
     VendorStore.find({ status: "active" }).select("userId name slug").lean(),
-    promotionService.placementPoints(),
+    readPointBalances(),
   ]);
 
   const rows = await Promise.all(
@@ -132,14 +132,9 @@ export async function listVendorPlanWindows() {
       const daysLeft = state.effectiveUntil
         ? Math.max(0, Math.ceil((state.effectiveUntil.getTime() - Date.now()) / DAY_MS))
         : 0;
-      // What a placement pinned for this plan's full window would earn, so the
-      // desk sees the same score the featured shelf uses to order the shops.
-      const placementPoints = promotionService.placementScore(
-        points,
-        state.plan.analytics,
-        (state.subscription?.billingCycle as BillingCycle) ?? null,
-        windowDays
-      );
+      // The same total the seller's dashboard and the admin board show. The
+      // picker ranks shops by this one number, never by a private formula.
+      const balance = balances.get(String(store.userId));
       return {
         vendorId: String(store.userId),
         storeName: store.name || "",
@@ -147,40 +142,32 @@ export async function listVendorPlanWindows() {
         isLive: state.isLive,
         featuredWindowDays: windowDays,
         planDaysRemaining: daysLeft,
-        placementPoints: state.isLive ? placementPoints : 0,
+        points: balance?.total ?? 0,
       };
     })
   );
 
   // Highest-earning shops first, so the picker leads with the ones that rank.
-  rows.sort((a, b) => b.placementPoints - a.placementPoints);
+  rows.sort((a, b) => b.points - a.points);
   return rows;
 }
 
 /**
  * A seller's points, and where they came from.
  *
- * Sell points are earned on delivered units; placement points are the score of
- * the placements still running. The total is what the seller's own ranking is
- * read from, and the position places them among the trading shops.
+ * Both halves are read from the shared ledger in `vendor-points.service`, so
+ * this screen and every store-team screen cannot disagree: plan points are the
+ * permanent plan awards, sell points are delivered units at the configured
+ * rate, and the total is what both the seller's position and the pickers use.
  */
 export async function getVendorPoints(userId: string) {
   const points = await promotionService.placementPoints();
   const perUnit = Number(points.sellPerUnit) || 0;
   const myId = new Types.ObjectId(userId);
 
-  const [sellRows, awardRows, ownProducts] = await Promise.all([
-    VendorOrder.aggregate([
-      { $match: { status: "delivered" } },
-      { $unwind: "$items" },
-      { $group: { _id: "$vendorId", units: { $sum: "$items.quantity" } } },
-    ]),
-    // Plan points come from the permanent award ledger, so a seller's total
-    // grows with each plan period (Free included) and never drops when a
-    // placement ends.
-    VendorPointAward.aggregate([
-      { $group: { _id: "$vendorId", points: { $sum: "$points" } } },
-    ]),
+  const [balances, history, ownProducts] = await Promise.all([
+    readPointBalances(),
+    readPointHistory(userId),
     VendorOrder.aggregate([
       { $match: { vendorId: myId, status: "delivered" } },
       { $unwind: "$items" },
@@ -196,34 +183,22 @@ export async function getVendorPoints(userId: string) {
     ]),
   ]);
 
-  const map = new Map<string, { sellUnits: number; placementPoints: number }>();
-  const ensure = (key: string) => {
-    let row = map.get(key);
-    if (!row) {
-      row = { sellUnits: 0, placementPoints: 0 };
-      map.set(key, row);
-    }
-    return row;
-  };
-  for (const row of sellRows) ensure(String(row._id)).sellUnits = Number(row.units) || 0;
-  for (const row of awardRows) ensure(String(row._id)).placementPoints = Number(row.points) || 0;
+  const totals = [...balances.entries()]
+    .map(([vendorId, row]) => ({ vendorId, total: row.total }))
+    .sort((a, b) => b.total - a.total);
 
-  const totals = [...map.entries()].map(([vendorId, row]) => ({
-    vendorId,
-    total: row.sellUnits * perUnit + row.placementPoints,
-  }));
-  totals.sort((a, b) => b.total - a.total);
-
-  const mine = map.get(userId) ?? { sellUnits: 0, placementPoints: 0 };
-  const sellPoints = mine.sellUnits * perUnit;
-  const myTotal = sellPoints + mine.placementPoints;
+  const mine = balances.get(userId);
+  const planPoints = mine?.planPoints ?? 0;
+  const sellPoints = mine?.sellPoints ?? 0;
+  const soldUnits = mine?.soldUnits ?? 0;
+  const myTotal = mine?.total ?? 0;
   const position = totals.filter((t) => t.total > myTotal).length + 1;
 
   return {
     perUnit,
     sellPoints,
-    soldUnits: mine.sellUnits,
-    placementPoints: mine.placementPoints,
+    soldUnits,
+    planPoints,
     totalPoints: myTotal,
     position,
     totalVendors: totals.length,
@@ -233,5 +208,7 @@ export async function getVendorPoints(userId: string) {
       units: Number(row.units) || 0,
       points: (Number(row.units) || 0) * perUnit,
     })),
+    /** Each plan period's award, newest first — where and when points came in. */
+    history,
   };
 }

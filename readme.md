@@ -63,9 +63,9 @@ Request -> verify JWT -> check role -> validate (Zod) -> controller -> service -
 ## Recent Changes
 
 - **Warehouse required:** a seller's store profile and the admin profile must carry a warehouse address; the schema requires the street, because riders collect there.
+- **One points ledger:** vendor points are the permanent plan-period awards (tier + yearly bonus + per-day) plus delivered units × per-unit, all read from `vendor-points.service`. The seller's /points read, the admin seller board/detail, and both promo/banner pickers now return that same total.
 - **Cumulative points:** every plan period (Free included) writes a permanent VendorPointAward; a seller's plan points are the sum, plus sell points from delivered units.
-- **Vendor points:** GET /api/vendor-promotions/points computes sell points (delivered units × per-unit) + placement points (live placements), the total and the position; /api/promotions/vendor-plans also carries the points.
-- **Promotions:** featured-placement points (per plan tier, yearly bonus, per day) are read from site settings; /api/promotions/vendor-plans returns each seller's window and points, highest first.
+- **Vendor points:** GET /api/vendor-promotions/points returns plan points, sell points, sold units, the total, the position and the award history; /api/promotions/vendor-plans returns each seller's window and the same total points, highest first.
 - **Coupons:** the subscription sweep trims a seller's coupons to Free's allowance on expiry (and on downgrade).
 - **Promotions:** a new /api/promotions/vendor-plans read lists each seller's featured window for the admin grant picker.
 - **Promotions:** a seller's featured length is chosen within their plan window; an admin grant is capped at the seller's window; a downgrade to Free ends the placements and pauses coupons past the new allowance.

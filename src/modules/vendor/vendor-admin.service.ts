@@ -8,6 +8,7 @@ import { VendorOrder } from "./vendor-order.model";
 import { VendorSubscription, SubscriptionTransaction } from "./vendor-subscription.model";
 import { FeaturedPromotion } from "./featured-promotion.model";
 import { listPromotions } from "./featured-promotion.service";
+import { readPointBalances, readVendorPointBalance } from "./vendor-points.service";
 import { toStoreDto } from "./vendor-store.service";
 import { listPlans } from "./vendor-plan.service";
 import type { BillingCycle } from "./vendor.types";
@@ -36,16 +37,15 @@ export interface VendorBoardQuery {
 }
 
 /**
- * The standing the desk sorts by — one number from four readings, so a shop is
- * never ranked on money alone: plan money paid, time paid for, sales it did not
- * lose, and its delivery record. The split comes back too, so a desk can see
- * whether the points were earned at the till or on the road.
+ * A seller's standing, in the same two halves the seller's own dashboard shows.
+ *
+ * Plan points are the permanent awards written on every plan period; sell
+ * points are delivered units at the configured rate. This is not a second
+ * formula — it is the shared ledger, read for the whole board at once.
  */
 export interface VendorPoints {
-  subscription: number;
-  duration: number;
-  sales: number;
-  record: number;
+  planPoints: number;
+  sellPoints: number;
   total: number;
 }
 
@@ -225,23 +225,12 @@ function livePeriod(periods: any[], vendorId: string, now: Date) {
   );
 }
 
-/** Points, from the four readings the desk ranks on. */
-function pointsFor(params: {
-  revenue: number;
-  paidDays: number;
-  sales: number;
-  successRate: number;
-}): VendorPoints {
-  const subscription = Math.round(params.revenue / 100);
-  const duration = Math.round(params.paidDays / 30);
-  const sales = Math.round(params.sales / 1000);
-  const record = Math.round(params.successRate);
+/** The points split a board row shows, from the shared ledger. */
+function pointsOf(balance?: { planPoints: number; sellPoints: number; total: number }): VendorPoints {
   return {
-    subscription,
-    duration,
-    sales,
-    record,
-    total: subscription + duration + sales + record,
+    planPoints: Number(balance?.planPoints) || 0,
+    sellPoints: Number(balance?.sellPoints) || 0,
+    total: Number(balance?.total) || 0,
   };
 }
 
@@ -266,7 +255,12 @@ const SORTERS: Record<string, (a: VendorBoardRow, b: VendorBoardRow) => number> 
  * how much is behind a tab it is not standing on.
  */
 export async function listVendorBoard(query: VendorBoardQuery) {
-  const [stores, ledgers, plans] = await Promise.all([readStores(), readLedgers(), listPlans()]);
+  const [stores, ledgers, plans, balances] = await Promise.all([
+    readStores(),
+    readLedgers(),
+    listPlans(),
+    readPointBalances(),
+  ]);
   const planName = new Map(plans.map((plan) => [plan.id, plan.name]));
   const now = new Date();
 
@@ -327,12 +321,7 @@ export async function listVendorBoard(query: VendorBoardQuery) {
       activeCoupons: couponBook.active,
       couponDiscountGiven: couponBook.discountGiven,
 
-      points: pointsFor({
-        revenue: paid.revenue,
-        paidDays: paid.paidDays,
-        sales: trade.sales,
-        successRate: trade.successRate,
-      }),
+      points: pointsOf(balances.get(id)),
     };
   });
 
@@ -408,21 +397,23 @@ export async function getVendorBoardDetail(id: string) {
   const vendorId = idOf(store.userId) || String(store.userId);
   const now = new Date();
 
-  const [orders, payments, periods, products, promotions, coupons, plans] = await Promise.all([
-    VendorOrder.find({ vendorId }).select("vendorId status subtotal").lean(),
-    SubscriptionTransaction.find({ vendorId }).sort({ createdAt: -1 }).limit(50).lean(),
-    VendorSubscription.find({ vendorId }).sort({ createdAt: -1 }).lean(),
-    Product.find({ vendorId })
-      .select(
-        "title slug image price originalPrice inStock stockQuantity sellCount rating reviewCount vendorProductStatus isVisible isFeatured featuredUntil createdAt"
-      )
-      .sort({ createdAt: -1 })
-      .limit(200)
-      .lean(),
-    listPromotions({ status: "all", kind: "all", page: 1, limit: 100 }, { vendorId }),
-    Coupon.find({ vendorId }).sort({ createdAt: -1 }).limit(100).lean(),
-    listPlans(),
-  ]);
+  const [orders, payments, periods, products, promotions, coupons, plans, pointBalance] =
+    await Promise.all([
+      VendorOrder.find({ vendorId }).select("vendorId status subtotal").lean(),
+      SubscriptionTransaction.find({ vendorId }).sort({ createdAt: -1 }).limit(50).lean(),
+      VendorSubscription.find({ vendorId }).sort({ createdAt: -1 }).lean(),
+      Product.find({ vendorId })
+        .select(
+          "title slug image price originalPrice inStock stockQuantity sellCount rating reviewCount vendorProductStatus isVisible isFeatured featuredUntil createdAt"
+        )
+        .sort({ createdAt: -1 })
+        .limit(200)
+        .lean(),
+      listPromotions({ status: "all", kind: "all", page: 1, limit: 100 }, { vendorId }),
+      Coupon.find({ vendorId }).sort({ createdAt: -1 }).limit(100).lean(),
+      listPlans(),
+      readVendorPointBalance(vendorId),
+    ]);
 
   const planName = new Map(plans.map((plan) => [plan.id, plan.name]));
   const live = livePeriod(periods as any[], vendorId, now);
@@ -504,7 +495,7 @@ export async function getVendorBoardDetail(id: string) {
       (coupons as any[]).reduce((sum, row) => sum + (Number(row.discountGiven) || 0), 0)
     ),
 
-    points: pointsFor({ revenue, paidDays, sales: money(sales), successRate }),
+    points: pointsOf(pointBalance),
   };
 
   return {

@@ -4,8 +4,8 @@ import { withTransaction } from "../../utils/transactions";
 import { Product } from "../product/product.model";
 import { Coupon } from "../coupon/coupon.model";
 import { FeaturedPromotion } from "./featured-promotion.model";
-import { endPromotionsForVendor, grantPlanSpotlight, placementPoints } from "./featured-promotion.service";
-import { VendorPointAward } from "./vendor-point-award.model";
+import { endPromotionsForVendor, grantPlanSpotlight } from "./featured-promotion.service";
+import { awardPlanPoints } from "./vendor-points.service";
 import { SubscriptionPlan } from "./subscription-plan.model";
 import { SubscriptionTransaction, VendorSubscription } from "./vendor-subscription.model";
 import { getPlan, commissionForPlan } from "./vendor-plan.service";
@@ -404,26 +404,17 @@ export async function startSubscription(input: StartSubscriptionInput) {
 
   // Every plan period awards its points permanently — Free included — so a
   // seller's total grows with each subscription and never drops when a
-  // placement ends. This is the ledger the dashboard reads.
+  // placement ends. This is the ledger every points screen reads.
   try {
-    const pointsTable = await placementPoints();
-    const tierPoints =
-      plan.analytics === "advanced"
-        ? pointsTable.advanced
-        : plan.analytics === "detailed"
-          ? pointsTable.detailed
-          : pointsTable.basic;
-    const award = tierPoints + (input.billingCycle === "yearly" ? pointsTable.yearlyBonus : 0);
-    if (award > 0) {
-      await VendorPointAward.create({
-        vendorId: input.vendorId,
-        plan: plan.id,
-        billingCycle: input.billingCycle,
-        points: award,
-        subscriptionId: subscription._id,
-        note: `${plan.name} ${input.billingCycle} period`,
-      });
-    }
+    await awardPlanPoints({
+      vendorId: input.vendorId,
+      plan: plan.id,
+      analytics: plan.analytics,
+      billingCycle: input.billingCycle,
+      days,
+      subscriptionId: subscription._id,
+      note: `${plan.name} ${input.billingCycle} period`,
+    });
   } catch (error) {
     console.error("[subscription] Could not award plan points:", error);
   }
