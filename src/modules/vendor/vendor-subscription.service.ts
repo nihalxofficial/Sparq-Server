@@ -505,6 +505,15 @@ export async function expireDueSubscriptions() {
     // Expired placements stop being featured and dim what they lifted; the
     // products themselves stay exactly as the seller left them.
     await endPromotionsForVendor(String(row.vendorId), "Subscription ended");
+
+    // The period is over, so the seller is on the Free plan now: keep the
+    // coupons Free allows and stop the rest (paused, never deleted).
+    try {
+      const freePlan = await getPlan("free").catch(() => null);
+      await enforceCouponAllowance(String(row.vendorId), freePlan?.activeCoupons ?? 0);
+    } catch (error) {
+      console.error("[subscription] Could not settle coupons to Free:", error);
+    }
   }
 
   return { expired };
