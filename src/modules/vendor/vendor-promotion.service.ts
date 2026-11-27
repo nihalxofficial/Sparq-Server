@@ -5,7 +5,7 @@ import * as promotionService from "./featured-promotion.service";
 import { requireTradingStore } from "./vendor-store.service";
 import { VendorStore } from "./vendor-store.model";
 import { VendorOrder } from "./vendor-order.model";
-import { FeaturedPromotion } from "./featured-promotion.model";
+import { VendorPointAward } from "./vendor-point-award.model";
 import { assertWithinLimit, getVendorPlanState } from "./vendor-subscription.service";
 import { isLiveVendorProductStatus, type BillingCycle } from "./vendor.types";
 import type { FeatureProductInput, PromotionQuery } from "./featured-promotion.validator";
@@ -169,15 +169,17 @@ export async function getVendorPoints(userId: string) {
   const perUnit = Number(points.sellPerUnit) || 0;
   const myId = new Types.ObjectId(userId);
 
-  const [sellRows, placeRows, ownProducts] = await Promise.all([
+  const [sellRows, awardRows, ownProducts] = await Promise.all([
     VendorOrder.aggregate([
       { $match: { status: "delivered" } },
       { $unwind: "$items" },
       { $group: { _id: "$vendorId", units: { $sum: "$items.quantity" } } },
     ]),
-    FeaturedPromotion.aggregate([
-      { $match: { status: "active", endsAt: { $gt: new Date() } } },
-      { $group: { _id: "$vendorId", points: { $sum: "$featuredRank" } } },
+    // Plan points come from the permanent award ledger, so a seller's total
+    // grows with each plan period (Free included) and never drops when a
+    // placement ends.
+    VendorPointAward.aggregate([
+      { $group: { _id: "$vendorId", points: { $sum: "$points" } } },
     ]),
     VendorOrder.aggregate([
       { $match: { vendorId: myId, status: "delivered" } },
@@ -204,7 +206,7 @@ export async function getVendorPoints(userId: string) {
     return row;
   };
   for (const row of sellRows) ensure(String(row._id)).sellUnits = Number(row.units) || 0;
-  for (const row of placeRows) ensure(String(row._id)).placementPoints = Number(row.points) || 0;
+  for (const row of awardRows) ensure(String(row._id)).placementPoints = Number(row.points) || 0;
 
   const totals = [...map.entries()].map(([vendorId, row]) => ({
     vendorId,
