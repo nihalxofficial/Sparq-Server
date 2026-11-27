@@ -74,7 +74,12 @@ export async function featureMyProduct(userId: string, input: FeatureProductInpu
   const remainingDays = until
     ? Math.max(1, Math.ceil((until.getTime() - Date.now()) / DAY_MS))
     : planDays;
-  const days = Math.min(planDays, remainingDays);
+  // The plan's window and the days left in the paid period are both ceilings; the
+  // seller may pick anything up to them, never past.
+  const ceiling = Math.min(planDays, remainingDays);
+  const days = input.days
+    ? Math.max(1, Math.min(ceiling, Math.floor(input.days)))
+    : ceiling;
 
   return promotionService.createPromotion(
     { kind: "product", productId: input.productId, days },

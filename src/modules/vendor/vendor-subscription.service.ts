@@ -240,6 +240,30 @@ interface StartSubscriptionInput {
 }
 
 /**
+ * Trims a seller's live coupons to what their plan allows.
+ *
+ * On a downgrade the seller keeps the coupons up to the new allowance and the
+ * rest stop (paused, never deleted), so one can come back by freeing a slot or
+ * upgrading — the same rule the create route checks.
+ */
+async function enforceCouponAllowance(vendorId: string, allowed: number) {
+  const limit = Math.max(0, Math.floor(Number(allowed) || 0));
+  const live = await Coupon.find({
+    ownerType: "vendor",
+    vendorId: new Types.ObjectId(vendorId),
+    isActive: true,
+  })
+    .sort({ createdAt: 1 })
+    .select("_id")
+    .lean();
+
+  if (live.length <= limit) return;
+
+  const toStop = live.slice(limit).map((row: any) => row._id);
+  await Coupon.updateMany({ _id: { $in: toStop } }, { $set: { isActive: false } });
+}
+
+/**
  * Creates the period a vendor is entitled to.
  *
  * It replaces any previous live row in the same unit of work, so the "one live
@@ -355,6 +379,26 @@ export async function startSubscription(input: StartSubscriptionInput) {
     });
   } catch (error) {
     console.error("[subscription] Could not open the plan spotlight:", error);
+  }
+
+  // A plan with no featured window (Free, or a rung that carries none) cannot
+  // keep what an earlier plan put on the shelves: clear its placements. Either
+  // way, trim the coupons to the new allowance so the shop runs on the plan it
+  // is actually on now.
+  if ((Number(plan.featuredDurationDays) || 0) <= 0) {
+    try {
+      await endPromotionsForVendor(
+        input.vendorId,
+        "Your plan no longer includes featured placements"
+      );
+    } catch (error) {
+      console.error("[subscription] Could not clear featured placements:", error);
+    }
+  }
+  try {
+    await enforceCouponAllowance(input.vendorId, plan.activeCoupons);
+  } catch (error) {
+    console.error("[subscription] Could not settle coupons to the plan:", error);
   }
 
   return subscription;

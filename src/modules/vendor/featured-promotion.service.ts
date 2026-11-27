@@ -578,8 +578,20 @@ export async function grantByAdmin(input: GrantPromotionInput) {
 
     const sellerPlan = await planFor(vendorId);
 
+    // The store team may spotlight a seller's listing, but never past what that
+    // seller's plan allows — a favour must not outlive the plan paying for it.
+    const sellerPlanRow = await getPlan(sellerPlan.plan).catch(() => null);
+    const ceiling = Number(sellerPlanRow?.featuredDurationDays) || 0;
+    if (ceiling <= 0) {
+      throw new ApiError(
+        400,
+        "That seller's plan has no featured window right now, so the listing cannot be featured."
+      );
+    }
+    const days = Math.max(1, Math.min(input.days, ceiling));
+
     const created = await createPromotion(
-      { kind: "product", productId: String(product._id), days: input.days },
+      { kind: "product", productId: String(product._id), days },
       {
         vendorId,
         storeId: String(store._id),
@@ -593,8 +605,8 @@ export async function grantByAdmin(input: GrantPromotionInput) {
       userId: vendorId,
       title: `"${(product as any).title || "A product"}" is featured`,
       detail: input.reason
-        ? `${input.days} days on the featured shelves — ${input.reason}`
-        : `${input.days} days on the featured shelves, granted by the store team`,
+        ? `${days} days on the featured shelves — ${input.reason}`
+        : `${days} days on the featured shelves, granted by the store team`,
       promotionId: String(created._id),
     });
 
@@ -607,8 +619,19 @@ export async function grantByAdmin(input: GrantPromotionInput) {
 
   const sellerPlan = await planFor(vendorId);
 
+  // The shop is featured for no longer than the seller's plan allows.
+  const sellerPlanRow = await getPlan(sellerPlan.plan).catch(() => null);
+  const ceiling = Number(sellerPlanRow?.featuredDurationDays) || 0;
+  if (ceiling <= 0) {
+    throw new ApiError(
+      400,
+      "That seller's plan has no featured window right now, so the shop cannot be featured."
+    );
+  }
+  const days = Math.max(1, Math.min(input.days, ceiling));
+
   const created = await createPromotion(
-    { kind: "store", days: input.days },
+    { kind: "store", days },
     {
       vendorId,
       storeId: String(store._id),
@@ -622,8 +645,8 @@ export async function grantByAdmin(input: GrantPromotionInput) {
     userId: vendorId,
     title: "Your store is featured",
     detail: input.reason
-      ? `${input.days} days in the featured shops row — ${input.reason}`
-      : `${input.days} days in the featured shops row, granted by the store team`,
+      ? `${days} days in the featured shops row — ${input.reason}`
+      : `${days} days in the featured shops row, granted by the store team`,
     promotionId: String(created._id),
   });
 
