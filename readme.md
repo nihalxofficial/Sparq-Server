@@ -217,6 +217,14 @@ Both support percentage or fixed amounts, optional product/category scope, a min
 - State is derived from `endsAt`, so a placement never outlives its window.
 - Unpublishing a product, or a lapsed subscription, ends the placements.
 
+### Vendor Points
+
+- **One ledger** — `src/modules/vendor/vendor-points.service.ts` reads the two halves every points screen shows: the permanent `VendorPointAward` rows and delivered units × the configured rate.
+- **Formula** — a plan period awards `tier + yearly bonus + perDay × period days`; delivered units add `sellPerUnit` each.
+- **Snapshot** — the award is written once per period, so a later settings change never rewrites history.
+- **One total everywhere** — the seller's `/api/vendor-promotions/points`, the admin seller board/detail, and `/api/promotions/vendor-plans` (promotion and hero-banner pickers) all return the same total; the seller read also returns each award (plan, cycle, points, note, date).
+- **Rates** — plan tiers, yearly bonus, per day and per unit sold live in site settings (`vendorPlacementPoints`).
+
 ### Warranty (vocabulary only)
 
 A product may carry one warranty code — `manufacturer-warranty`, `seller-warranty`, `extended-warranty`, `other` or `none` — plus a period and a terms line. There is **no claim, extension or expiry workflow**; `src/modules/warranty/` holds only the shared type list.
